@@ -82,7 +82,6 @@ void InitModelFlags(struct model_flags **flags) {
         error("   >>> Failed to initialize model flags; Aborting\n");
         exit(1);
     }
-    (*flags)->disable_regularization = false;
 }
 /**
  * Destroy model flags
@@ -731,30 +730,6 @@ void AddContextBasedGradients(real *embeddings, long long trg_offset,
 
 
 /**
- * Add gradient from L2 regularization term
- *
- * L2 reg term is -\lambda||\theta||^2
- * Gradient d/dw_i = -2\lambda*w_i
- */
-void AddRegularizationGradient(real lambda, real *embeddings, long long offset,
-        real *norms, int ix, real *gradients, long gradient_start_ix,
-        long long embedding_size) {
-    long long c;
-
-    // apply dimension-wise penalty
-    for (c = 0; c < embedding_size; c++) {
-        gradients[gradient_start_ix + c] -=
-            lambda * 2 * embeddings[offset + c];
-        #ifdef PRINTGRADIENTS
-        fprintf(stderr, "%f ",(
-            lambda * -2 * embeddings[offset + c]
-        ));
-        #endif
-    }
-}
-
-
-/**
  * Apply the gradients from a single training window to all
  * model components
  *  1. Word embeddings
@@ -782,7 +757,7 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
 
     long long c;
     int ctx_ix;
-    long long ctx_offset, ctx_reg_gradient_offset;
+    long long ctx_offset;
     int i, j, a, d;
 
     long long term_gradient_offset, term_entity_block_start, word_ctx_block_start,
@@ -910,30 +885,11 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
             }
         }
     }
-    // apply context embedding gradients from regularization
-    if (!flags->disable_regularization) {
-        for (i = 0; i < num_ctx; i++) {
-            if (all_ctx_ixes[i] >= 0) {
-                ctx_offset = all_ctx_ixes[i] * embedding_size;
-                ctx_reg_gradient_offset = i * embedding_size;
-                for (c = 0; c < embedding_size; c++) {
-                    ctx_embeddings[ctx_offset + c]
-                        += (ctx_reg_gradients[ctx_reg_gradient_offset + c] * alpha);
-                }
-            }
-        }
-    }
     // finally, update applicable norms for context embeddings
     for (i = 0; i < num_ctx; i++) {
         if (all_ctx_ixes[i] >= 0) {
             ctx_norms[all_ctx_ixes[i]] = 
                 Norm(ctx_embeddings, all_ctx_ixes[i] * embedding_size, embedding_size);
-            /*
-            if (ctx_norms[all_ctx_ixes[i]] >= NORM_LIMIT) {
-                error("   CTX NORM BROKE FIRST: %f\n", ctx_norms[all_ctx_ixes[i]]);
-                exit(1);
-            }
-            */
         }
     }
 }
@@ -945,7 +901,6 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
  *      a) entity likelihood
  *   2. Calculate gradients, based on:
  *      a) positive/negative contexts
- *      b) L2-regularization
  *   3. Apply batched gradients
  */
 void LearningStep(int *masked_word_context_window, int target, int full_window_size,
@@ -956,7 +911,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,
-        real alpha, long long embedding_size, int negative, real lambda, bool word_burn, bool burning_in,
+        real alpha, long long embedding_size, int negative, bool word_burn, bool burning_in,
         struct model_flags *flags) {
 
     int i, j, k, l, ctr, ix;
@@ -1194,15 +1149,11 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         for (c = 0; c < num_completed_terms * full_window_size * negative * embedding_size; c++)
             term_neg_ctx_gradients[c] = 0;
     }
-    if (!flags->disable_regularization) {
-        for (c = 0; c < num_ctx * embedding_size; c++)
-            ctx_reg_gradients[c] = 0;
-    }
 
     // (1) Word gradients
     if (!flags->disable_words && word_ix >= 0) {
         
-        // (1.1) mini-batched word gradients from contexts
+        // mini-batched word gradients from contexts
         #ifdef PRINTGRADIENTS
         fprintf(stderr, "Word context based gradient: [ ");
         #endif
@@ -1215,19 +1166,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         fprintf(stderr, "]\n");
         fflush(stderr);
         #endif
-
-        // (1.2) word regularization gradient
-        if (!flags->disable_regularization) {
-            #ifdef PRINTGRADIENTS
-            fprintf(stderr, "Word regularization gradient: [ ");
-            #endif
-            AddRegularizationGradient(lambda, word_embeddings, word_offset,
-                word_norms, word_ix, word_gradient, 0, embedding_size);
-            #ifdef PRINTGRADIENTS
-            fprintf(stderr, "]\n");
-            fflush(stderr);
-            #endif
-        }
     }
 
     if (!word_burn && (!flags->disable_terms || !flags->disable_entities)) {
@@ -1238,7 +1176,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
                 term_ns_block_start = i * full_window_size * negative;
                 term_gradient_offset = i * embedding_size;
                 
-                // (2.1) mini-batched term embedding gradients from contexts
+                // mini-batched term embedding gradients from contexts
                 if (!flags->disable_terms) {
                     #ifdef PRINTGRADIENTS
                     fprintf(stderr, "Term context based gradient: [ ");
@@ -1256,21 +1194,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
                     fflush(stderr);
                     #endif
                 }
-
-                // (2.2) term regularization gradient
-                if (!flags->disable_terms || !flags->disable_regularization) {
-                    #ifdef PRINTGRADIENTS
-                    fprintf(stderr, "Term regularization gradient: [ ");
-                    #endif
-                    AddRegularizationGradient(lambda, term_embeddings, term_offsets[i],
-                        term_norms, term_ixes[i], term_gradients, term_gradient_offset,
-                        embedding_size);
-                    #ifdef PRINTGRADIENTS
-                    fprintf(stderr, "]\n");
-                    fflush(stderr);
-                    #endif
-                }
-
                 
                 // (3) Entity gradients
                 if (!flags->disable_entities) {
@@ -1282,7 +1205,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
                             entity_ns_block_start = ((i * max_num_entities) + j) * full_window_size * negative;
                             entity_gradient_offset = (term_entity_block_start + j) * embedding_size;
 
-                            // (3.1) mini-batched entity gradients from contexts
+                            // mini-batched entity gradients from contexts
                             if (completed_term_buffer[i]->contexts != NULL) {
                                 #ifdef PRINTGRADIENTS
                                 fprintf(stderr, "Entity context based gradient: [ ");
@@ -1301,65 +1224,8 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
                                 fflush(stderr);
                                 #endif
                             }
-
-                            // (3.2) entity regularization gradient
-                            if (!flags->disable_regularization) {
-                                // First, check to see if we've already grabbed a regularization
-                                // gradient for this entity
-                                if (entity_update_counters[entity_ixes[term_entity_block_start + j]] == 0) {
-                                    #ifdef PRINTGRADIENTS
-                                    fprintf(stderr, "Entity regularization gradient: [ ");
-                                    #endif
-                                    AddRegularizationGradient(lambda, entity_embeddings,
-                                        entity_offsets[term_entity_block_start + j], entity_norms,
-                                        entity_ixes[term_entity_block_start + j], entity_gradients,
-                                        entity_gradient_offset, embedding_size);
-                                    #ifdef PRINTGRADIENTS
-                                    fprintf(stderr, "]\n");
-                                    fflush(stderr);
-                                    #endif
-
-                                    // flag that it's been regularized
-                                    entity_update_counters[entity_ixes[term_entity_block_start + j]] = 1;
-                                } else {
-                                    // if we've already grabbed it, add zero to the gradient
-                                    for (c = 0; c < embedding_size; c++)
-                                        entity_gradients[entity_gradient_offset + c] += 0;
-                                }
-                            }
                         }
                     }
-                }
-            }
-        }
-    }
-
-    // (4) Additional context regularization gradients
-    if (!flags->disable_regularization) {
-        for (i = 0; i < num_ctx; i++) {
-            if (all_ctx_ixes[i] >= 0) {
-                // (4.1) context regularization gradient
-                // check to see if we've already grabbed a regularization gradient 
-                // for this context word
-                if (ctx_update_counters[all_ctx_ixes[i]] == 0) {
-                    #ifdef PRINTGRADIENTS
-                    fprintf(stderr, "Ctx regularization gradient: [ ");
-                    #endif
-                    AddRegularizationGradient(lambda, ctx_embeddings,
-                        all_ctx_ixes[i] * embedding_size, ctx_norms,
-                        all_ctx_ixes[i], ctx_reg_gradients, i*embedding_size,
-                        embedding_size);
-                    #ifdef PRINTGRADIENTS
-                    fprintf(stderr, "]\n");
-                    fflush(stderr);
-                    #endif
-
-                    // flag that it's been regularized
-                    ctx_update_counters[all_ctx_ixes[i]] = 1;
-                } else {
-                    // if we've already grabbed it, just add zero to the gradient
-                    for (c = 0; c < embedding_size; c++)
-                        ctx_reg_gradients[(i*embedding_size) + c] += 0;
                 }
             }
         }

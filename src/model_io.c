@@ -141,7 +141,6 @@ void WriteHyperparameters(char *f, struct hyperparameters params) {
     fprintf(fo, "  Alpha: %f\n", params.alpha);
     fprintf(fo, "  Alpha decay check interval: %lld\n", params.alpha_schedule_interval);
     fprintf(fo, "  Downsampling rate: %f\n", params.downsampling_rate);
-    fprintf(fo, "  Lambda: %f\n", params.lambda);
     fprintf(fo, "  # of threads: %d\n", params.num_threads);
     fprintf(fo, "  Random seed: %ld\n", params.random_seed);
 
@@ -153,8 +152,6 @@ void WriteHyperparameters(char *f, struct hyperparameters params) {
     if (params.flags->disable_terms) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Entity learning: ");
     if (params.flags->disable_entities) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
-    fprintf(fo, "\n  Regularization: ");
-    if (params.flags->disable_regularization) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n");
 
     // training files

@@ -4,8 +4,6 @@
 typedef float real;                    // Precision of float numbers
 
 struct model_flags {
-    bool disable_term_similarity;
-    bool disable_regularization;
     bool disable_words;
     bool disable_terms;
     bool disable_entities;
@@ -23,7 +21,6 @@ struct hyperparameters {
     real alpha;
     long long alpha_schedule_interval;
     real downsampling_rate;
-    real lambda;
     long random_seed;
     struct model_flags *flags;
     int num_threads;
@@ -71,7 +68,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,
-        real alpha, long long embedding_size, int negative, real lambda, bool word_burn, bool burning_in,
+        real alpha, long long embedding_size, int negative, bool word_burn, bool burning_in,
         struct model_flags *flags);
 
 /** Component methods (accessible for testing) **/
@@ -112,9 +109,6 @@ void AddMemberWordBasedGradients(real *term_embeddings, int term_ix,
         struct term_monogamy_map *monomap, real *term_gradients,
         long term_gradient_start_ix, real *member_word_gradients,
         long member_word_gradient_start_ix, long long embedding_size);
-void AddRegularizationGradient(real lambda, real *embeddings, long long offset,
-        real *norms, int ix, real *gradients, long gradient_start_ix,
-        long long embedding_size);
 int RandomSubwindowSkip(int window_size);
 void InitDownsamplingTable(real **downsampling_table, struct vocabulary *v, real downsampling_rate);
 void DestroyDownsamplingTable(real **downsampling_table);

@@ -94,7 +94,6 @@ struct model_flags *flags;
 long long corpus_token_count = 0;
 real alpha = 0.025, starting_alpha, downsampling_rate = 0.00001;
 long long alpha_schedule_interval = 10000;
-real lambda = 0.0;
 real *word_embeddings, *term_embeddings, *entity_embeddings, *ctx_embeddings;
 real *word_norms, *term_norms, *entity_norms, *ctx_norms;
 int numiters = 5;
@@ -329,7 +328,7 @@ void *TrainModelThread(void *arguments) {
                     max_num_entities, word_embeddings, term_embeddings, entity_embeddings,
                     ctx_embeddings, word_norms, term_norms, entity_norms, ctx_norms,
                     entity_update_counters, ctx_update_counters,
-                    alpha, embedding_size, negative, lambda, word_burn, burning_in, flags);
+                    alpha, embedding_size, negative, word_burn, burning_in, flags);
             }
 
 
@@ -783,8 +782,6 @@ void usage() {
     printf("\t\tFile containing pre-trained word embeddings to initialize the model from (requires -stringmap)\n");
     printf("\t-stringmap <file>\n");
     printf("\t\tFile mapping term IDs to the strings they represent (required if using -initialize-from)\n");
-    printf("\t-lambda <float>\n");
-    printf("\t\tRegularization penalty; default %f\n", lambda);
     printf("\nDEBUGGING OPTIONS\n");
     printf("\t-random-seed <seed>\n");
     printf("\t\tDebugging option; allows for a hard seed to the random number generator, for replicable behavior\n");
@@ -844,7 +841,6 @@ void parse_args(int argc, char **argv) {
     if ((i = ArgPos((char *)"-save-each", argc, argv)) > 0) save_each_iter = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window_size = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-stringmap", argc, argv)) > 0) strcpy(term_strmap_file, argv[i + 1]);
-    if ((i = ArgPos((char *)"-lambda", argc, argv)) > 0) lambda = atof(argv[i + 1]);
     // debug options
     if ((i = ArgPos((char *)"-random-seed", argc, argv)) > 0) random_seed = atol(argv[i + 1]);
     if ((i = FlagPos((char *)"-disable-words", argc, argv)) > 0) flags->disable_words = true;
@@ -857,12 +853,6 @@ void parse_args(int argc, char **argv) {
         str_map_sep = malloc(2 * sizeof(char));
         strcpy(str_map_sep, ",");
     }
-
-    // override everything
-    lambda = 0;
-
-    // disable regularization if lambda is 0
-    if (lambda == 0) flags->disable_regularization = true;
 }
 
 int verify_args() {
@@ -915,10 +905,6 @@ int verify_args() {
         printf("-word-burn-iters must be 0 or greater.\n\n");
         return 0;
     }
-    if (lambda < 0) {
-        printf("-lambda must be 0 or greater.\n\n");
-        return 0;
-    }
 
     return 1;
 }
@@ -944,13 +930,10 @@ int main(int argc, char **argv) {
     if (!verify_args()) { return 0; }
 
     // give notice of any disabled model components
-    if (flags->disable_regularization
-            || flags->disable_words
+    if (flags->disable_words
             || flags->disable_terms
             || flags->disable_entities) {
         info("=== Model overrides ===\n");
-        if (flags->disable_regularization)
-            info("  Regularization: DISABLED\n");
         if (flags->disable_words)
             info("  Word training: DISABLED\n");
         if (flags->disable_terms)
@@ -977,7 +960,6 @@ int main(int argc, char **argv) {
     params.alpha = alpha;
     params.alpha_schedule_interval = alpha_schedule_interval;
     params.downsampling_rate = downsampling_rate;
-    params.lambda = lambda;
     params.random_seed = random_seed;
     params.flags = flags;
     params.num_threads = num_threads;
