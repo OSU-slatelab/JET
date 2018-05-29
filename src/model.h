@@ -6,7 +6,6 @@ typedef float real;                    // Precision of float numbers
 struct model_flags {
     bool disable_likelihoods;
     bool disable_term_similarity;
-    bool disable_latency;
     bool disable_regularization;
     bool disable_words;
     bool disable_terms;
@@ -100,11 +99,6 @@ void CalculateAverageContextEmbeddings(struct term_annotation **completed_term_b
         int num_completed_terms, int *sampled_completed_term_ixes, real *ctx_embeddings,
         long long embedding_size, int window_start, int window_end, int target,
         real *averaged_ctx_embeddings);
-void CalculateLocalTermLatencyScores(struct term_annotation **completed_term_buffer,
-        int num_completed_terms, int *sampled_completed_term_ixes, int max_num_entities,
-        int *entities_per_term, real *entity_embeddings, real *entity_norms,
-        int *entity_ixes, real *averaged_ctx_embeddings, long long embedding_size,
-        real *local_term_latency_scores);
 void CalculateLocalTermEntityLikelihoods(struct term_annotation **completed_term_buffer,
         int num_completed_terms, int *sampled_completed_term_ixes, int max_num_entities,
         int *entities_per_term, real *global_term_entity_likelihoods, real *entity_embeddings,

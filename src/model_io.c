@@ -187,8 +187,6 @@ void WriteHyperparameters(char *f, struct hyperparameters params) {
     if (params.flags->disable_entities) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Term-entity likelihoods: ");
     if (params.flags->disable_likelihoods) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
-    fprintf(fo, "\n  Term latency: ");
-    if (params.flags->disable_latency) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Regularization: ");
     if (params.flags->disable_regularization) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n");

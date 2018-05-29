@@ -83,7 +83,6 @@ void InitModelFlags(struct model_flags **flags) {
         exit(1);
     }
     (*flags)->disable_likelihoods = false;
-    (*flags)->disable_latency = false;
     (*flags)->disable_regularization = false;
 }
 /**
@@ -609,59 +608,6 @@ void TrackContextIndices(int *masked_word_context_window, int word_ix,
 }
 
 
-/**
- * Given a set of term mentions with invdividual context windows,
- * calculate a context-sensitive posterior probability of each
- * term having a latent reference (to an entity).
- *
- * Let E be the entities that term t can represent, and let W
- * be the observed context window, where Avg(V) is its average
- * word embedding.
- * Then, this is calculated as:
- *   t_lat <- max_{e \in E} CosSim(v_e, AvgV(W))
- */
-void CalculateLocalTermLatencyScores(struct term_annotation **completed_term_buffer,
-        int num_completed_terms, int *sampled_completed_term_ixes, int max_num_entities,
-        int *entities_per_term, real *entity_embeddings, real *entity_norms,
-        int *entity_ixes, real *averaged_ctx_embeddings, long long embedding_size,
-        real *local_term_latency_scores) {
-    int i, j, entity_ix, term_entity_block_start;
-    real entity_similarity, max_entity_similarity;
-    
-    // zero it out first
-    for (i = 0; i < num_completed_terms; i++)
-        local_term_latency_scores[i] = 0;
-
-    for (i = 0; i < num_completed_terms; i++) {
-        if (sampled_completed_term_ixes[i] >= 0) {
-            term_entity_block_start = i * max_num_entities;
-
-            // find the maximum cosine similarity between each of this
-            // term's possible entities and the averaged context window
-            max_entity_similarity = 0;
-            for (j = 0; j < entities_per_term[i]; j++) {
-                entity_ix = entity_ixes[term_entity_block_start + j];
-
-                entity_similarity = CosineSimilarity(entity_embeddings,
-                    entity_ix * embedding_size, averaged_ctx_embeddings,
-                    i * embedding_size, entity_norms[entity_ix],
-                    Norm(averaged_ctx_embeddings, i*embedding_size, embedding_size),
-                    embedding_size);
-
-                if (entity_similarity > max_entity_similarity)
-                    max_entity_similarity = entity_similarity;
-            }
-
-            // floor it at 0.1
-            if (max_entity_similarity < 0.1)
-                max_entity_similarity = 0.1;
-
-            // and save it
-            local_term_latency_scores[i] = max_entity_similarity;
-        }
-    }
-}
-
 
 /**
  * Given a set of term mentions with individual context windows,
@@ -1153,8 +1099,7 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
 /**
  * Update model parameters for one training step.  Consists of three phases:
  *   1. Calculate context-sensitive posteriors for:
- *      a) term latency
- *      b) entity likelihood
+ *      a) entity likelihood
  *   2. Calculate gradients, based on:
  *      a) positive/negative contexts
  *      b) L2-regularization
@@ -1189,10 +1134,8 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     long long term_offsets[num_completed_terms];
     long long entity_offsets[num_completed_terms * max_num_entities];
 
-    real *local_term_latency_scores = NULL,
-        *local_term_entity_likelihoods = NULL;
+    real *local_term_entity_likelihoods = NULL;
     if (!flags->disable_terms || !flags->disable_entities) {
-        local_term_latency_scores = MallocOrDie(num_completed_terms * sizeof(real), "local term latency scores");
         local_term_entity_likelihoods = MallocOrDie(num_completed_terms * max_num_entities * sizeof(real), "local term entity likelihoods");
     }
 
@@ -1370,15 +1313,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     ////////////////////////////////////////////////////////////
 
     if (!word_burn && (!flags->disable_terms || !flags->disable_entities)) {
-        if (!burning_in && (!flags->disable_latency)) {
-            CalculateAverageContextEmbeddings(completed_term_buffer,
-                num_completed_terms, sampled_completed_term_ixes,
-                ctx_embeddings, embedding_size, sub_window_skip,
-                full_window_size - sub_window_skip, target,
-                averaged_ctx_embeddings);
-        }
-
-
         // CALCULATE ALL THE LOCAL SCORES!1!
         if (!burning_in && !flags->disable_likelihoods) {
             CalculateLocalTermEntityLikelihoods(completed_term_buffer,
@@ -1394,16 +1328,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
                 for (j = entities_per_term[i]; j < max_num_entities; j++)
                     local_term_entity_likelihoods[term_entity_block_start + j] = 0;
             }
-        }
-
-        if (!burning_in && !flags->disable_latency) {
-            CalculateLocalTermLatencyScores(completed_term_buffer, num_completed_terms,
-                sampled_completed_term_ixes, max_num_entities, entities_per_term,
-                entity_embeddings, entity_norms, entity_ixes, averaged_ctx_embeddings,
-                embedding_size, local_term_latency_scores);
-        } else {
-            for (i = 0; i < num_completed_terms; i++)
-                local_term_latency_scores[i] = 1;
         }
     }
 
@@ -1493,8 +1417,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
                         term_pos_ctx_dots, term_block_start, term_neg_ctx_dots, term_ns_block_start,
                         term_gradients, term_gradient_offset, term_pos_ctx_gradients,
                         i * full_window_size * embedding_size, term_neg_ctx_gradients,
-                        term_ns_block_start * embedding_size, embedding_size,
-                        local_term_latency_scores[i]);
+                        term_ns_block_start * embedding_size, embedding_size, 1);
                     #ifdef PRINTGRADIENTS
                     fprintf(stderr, "]\n");
                     fflush(stderr);
@@ -1539,7 +1462,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
                                     entity_gradients, entity_gradient_offset,
                                     term_pos_ctx_gradients, i * full_window_size * embedding_size,
                                     term_neg_ctx_gradients, term_ns_block_start * embedding_size, embedding_size,
-                                    local_term_latency_scores[i] * local_term_entity_likelihoods[term_entity_block_start + j]);
+                                    local_term_entity_likelihoods[term_entity_block_start + j]);
                                 #ifdef PRINTGRADIENTS
                                 fprintf(stderr, "]\n");
                                 fflush(stderr);
@@ -1650,7 +1573,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
 
     // FreeAndNull checks for if NULL before freeing,
     // so can safely call on everything here
-    FreeAndNull((void *)&local_term_latency_scores);
     FreeAndNull((void *)&local_term_entity_likelihoods);
 
     FreeAndNull((void *)&word_gradient);

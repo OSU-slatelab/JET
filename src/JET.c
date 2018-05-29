@@ -802,14 +802,12 @@ void usage() {
     printf("\t\tDebugging option; allows for a hard seed to the random number generator, for replicable behavior\n");
     printf("\t-disable-likelihoods\n");
     printf("\t\tDisables term-entity likelihood-based learning\n");
-    printf("\t-disable-latency\n");
-    printf("\t\tDisables term latency calculation (assumed always latent\n");
     printf("\t-disable-words\n");
     printf("\t\tDisables word training\n");
     printf("\t-disable-terms\n");
-    printf("\t\tDisables term training (disabled likelihoods and latency as well)\n");
+    printf("\t\tDisables term training (disabled likelihoods as well)\n");
     printf("\t-disable-entities\n");
-    printf("\t\tDisables entity training (disabled likelihoods and latency as well)\n");
+    printf("\t\tDisables entity training (disabled likelihoods as well)\n");
     // TODO: fix example
     printf("\nExamples:\n");
     printf("./word2vecf -train data.txt -wvocab wv -cvocab ev -tvocab tv -output vec.txt -size 200 -negative 5 -threads 10 \n\n");
@@ -864,7 +862,6 @@ void parse_args(int argc, char **argv) {
     // debug options
     if ((i = ArgPos((char *)"-random-seed", argc, argv)) > 0) random_seed = atol(argv[i + 1]);
     if ((i = FlagPos((char *)"-disable-likelihoods", argc, argv)) > 0) flags->disable_likelihoods = true;
-    if ((i = FlagPos((char *)"-disable-latency", argc, argv)) > 0) flags->disable_latency = true;
     if ((i = FlagPos((char *)"-disable-words", argc, argv)) > 0) flags->disable_words = true;
     if ((i = FlagPos((char *)"-disable-terms", argc, argv)) > 0) flags->disable_terms = true;
     if ((i = FlagPos((char *)"-disable-entities", argc, argv)) > 0) flags->disable_entities = true;
@@ -878,13 +875,11 @@ void parse_args(int argc, char **argv) {
 
     // handle component disabling overrides
     if (flags->disable_terms || flags->disable_entities) {
-        flags->disable_latency = true;
         flags->disable_likelihoods = true;
     }
 
     // override everything
     lambda = 0;
-    flags->disable_latency = true;
     flags->disable_likelihoods = true;
 
     // disable regularization if lambda is 0
@@ -971,7 +966,6 @@ int main(int argc, char **argv) {
 
     // give notice of any disabled model components
     if (flags->disable_likelihoods 
-            || flags->disable_latency
             || flags->disable_regularization
             || flags->disable_words
             || flags->disable_terms
@@ -979,8 +973,6 @@ int main(int argc, char **argv) {
         info("=== Model overrides ===\n");
         if (flags->disable_likelihoods)
             info("  Term-entity likelihood learning: DISABLED\n");
-        if (flags->disable_latency)
-            info("  Term latency estimation: DISABLED\n");
         if (flags->disable_regularization)
             info("  Regularization: DISABLED\n");
         if (flags->disable_words)
