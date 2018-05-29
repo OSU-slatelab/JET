@@ -12,7 +12,6 @@
 #include "entities.h"
 #include "parallel_reader.h"
 #include "term_strings.h"
-#include "monogamy.h"
 #include "model.h"
 #include "context_manager.h"
 

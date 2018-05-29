@@ -14,7 +14,6 @@
 #include "thread_config.h"
 #include "vocab_learner.h"
 #include "term_strings.h"
-#include "monogamy.h"
 #include "model.h"
 #include "mt19937ar.h"
 
@@ -413,52 +412,6 @@ real CalculateLogSigmoidOuterGradient(real dot_product, int label) {
     return gradient;
 }
 
-
-/**
- * Given a set of completed terms, calculate the weighted sum
- * of the embeddings of each of their sets of member words
- * [weighted by P(t|w)].
- */
-void CombineWeightedMemberWordEmbeddings(struct term_annotation **completed_term_buffer,
-        int num_completed_terms, int *sampled_completed_term_ixes, real *word_embeddings,
-        struct term_monogamy_map *monomap, long long embedding_size,
-        real *combined_word_embeddings) {
-    long long c, word_offset, combined_offset;
-    int i, j, word_ix, term_ix, known_words;
-    float mono_weight;
-
-    for (i = 0; i < num_completed_terms; i++) {
-        combined_offset = i * embedding_size;
-        known_words = 0;
-
-        // initialize to 0
-        for (c = 0; c < embedding_size; c++)
-            combined_word_embeddings[combined_offset + c] = 0;
-
-        // if we're using the term, then average its member words
-        term_ix = sampled_completed_term_ixes[i];
-        if (term_ix >= 0) {
-            // sum embeddings of all known words
-            for (j = 0; j < completed_term_buffer[i]->num_tokens; j++) {
-                word_ix = completed_term_buffer[i]->member_words[j];
-                if (word_ix > 0) {
-                    word_offset = word_ix * embedding_size;
-                    mono_weight = monomap->monogamies[term_ix].by_word[j];
-                    for (c = 0; c < embedding_size; c++) {
-                        combined_word_embeddings[combined_offset + c]
-                            += (mono_weight * word_embeddings[word_offset + c]);
-                    }
-                    known_words++;
-                }
-            }
-            // normalize
-            if (known_words > 0) {
-                for (c = 0; c < embedding_size; c++)
-                    combined_word_embeddings[combined_offset + c] /= known_words;
-            }
-        }
-    }
-}
 
 
 /**
@@ -907,7 +860,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int sub_window_skip, struct term_annotation **completed_term_buffer, int num_completed_terms,
         int *sampled_completed_term_ixes, int *word_negative_samples, int *term_negative_samples,
         struct vocabulary *wv, struct vocabulary *tv, struct vocabulary *ev, struct entity_map *termmap,
-        struct term_monogamy_map *monomap,
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,

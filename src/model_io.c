@@ -9,7 +9,6 @@
 #include "entities.h"
 #include "logging.h"
 #include "term_strings.h"
-#include "monogamy.h"
 #include "model.h"
 #include "model_io.h"
 

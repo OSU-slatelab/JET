@@ -45,7 +45,6 @@
 #include "thread_config.h"
 #include "vocab_learner.h"
 #include "term_strings.h"
-#include "monogamy.h"
 #include "model.h"
 #include "model_io.h"
 #include "context_manager.h"
@@ -116,7 +115,6 @@ struct vocabulary *ev;
 struct vocabulary *tv;
 struct entity_map *termmap;
 struct term_string_map *strmap;
-struct term_monogamy_map *monomap;
 
 int negative = 15;
 int *unitable;
@@ -316,7 +314,7 @@ void *TrainModelThread(void *arguments) {
 
                 LearningStep(masked_word_context_window, target, full_window_size, sub_window_skip,
                     completed_term_buffer, num_completed_terms, sampled_completed_term_ixes,
-                    word_negative_samples, term_negative_samples, wv, tv, ev, termmap, monomap,
+                    word_negative_samples, term_negative_samples, wv, tv, ev, termmap,
                     max_num_entities, word_embeddings, term_embeddings, entity_embeddings,
                     ctx_embeddings, word_norms, term_norms, entity_norms, ctx_norms,
                     entity_update_counters, ctx_update_counters,
@@ -620,7 +618,6 @@ void TrainModel(long long *thread_tokens, long long *thread_start_bytes_plain,
 }
 
 void LoadCorpusKnowledge() {
-    long long full_corpus_size;
     bool save_word_vocab = false, save_term_vocab = false;
 
     // get word vocabulary (unfiltered; learn if necessary)
@@ -647,8 +644,6 @@ void LoadCorpusKnowledge() {
         info("  Wrote term vocabulary to %s\n", tvocab_file);
     }
 
-    full_corpus_size = wv->word_count;
-
     // reduce and filter word/term vocabularies for active use
     SortAndReduceVocab(wv, min_count);
     SortAndReduceVocab(tv, min_count);
@@ -667,24 +662,6 @@ void LoadCorpusKnowledge() {
     info("Reading term->string map...\n");
     strmap = CreateTermStringMap(tv->vocab_size);
     ReadTermStringMap(term_strmap_file, tv, strmap);
-
-    // calculate monogamy scores
-    info("Calculating monogamy scores...\n");
-    monomap = CreateMonogamyMap(tv->vocab_size);
-    CalculateMonogamy(tv, wv, strmap, full_corpus_size, monomap);
-
-    /*
-    for (long term_ix = 0; term_ix < tv->vocab_size; term_ix++) {
-        printf("  [MONOGAMY]  Term %ld \"", term_ix);
-        for (int i = 0; i < strmap->strings[term_ix].num_tokens; i++) {
-            printf("%s ", strmap->strings[term_ix].tokens[i]);
-        }
-        printf("\b\"  MW: %f\n", monomap->monogamies[term_ix].monogamy_weight);
-        for (int j = 0; j < monomap->monogamies[term_ix].num_tokens; j++) {
-            printf("  [MONOGAMY]     Word %d M: %f\n", j, monomap->monogamies[term_ix].by_word[j]);
-        }
-    }
-    */
 }
 
 void header() {
@@ -975,7 +952,6 @@ int main(int argc, char **argv) {
     DestroyVocabulary(&tv);
     DestroyVocabulary(&ev);
     DestroyTermStringMap(&strmap);
-    DestroyMonogamyMap(&monomap);
     DestroyModel(&word_embeddings, &term_embeddings, &entity_embeddings, &ctx_embeddings,
         &word_norms, &term_norms, &entity_norms, &ctx_norms,
         &unitable, &word_downsampling_table, &term_downsampling_table);

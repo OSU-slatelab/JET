@@ -60,7 +60,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int sub_window_skip, struct term_annotation **completed_term_buffer, int num_completed_terms,
         int *sampled_completed_term_ixes, int *word_negative_samples, int *term_negative_samples,
         struct vocabulary *wv, struct vocabulary *tv, struct vocabulary *ev, struct entity_map *termmap,
-        struct term_monogamy_map *monomap,
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,
@@ -79,10 +78,6 @@ void CalculateContextDotProducts(real *embeddings, long long trg_offset,
         int window_start, int window_end, long long embedding_size,
         real *pos_ctx_dots, long long pos_ctx_start_ix,
         real *neg_ctx_dots, long long neg_ctx_start_ix);
-void CombineWeightedMemberWordEmbeddings(struct term_annotation **completed_term_buffer,
-        int num_completed_terms, int *sampled_completed_term_ixes, real *word_embeddings,
-        struct term_monogamy_map *monomap, long long embedding_size,
-        real *combined_word_embeddings);
 void CalculateAverageContextEmbeddings(struct term_annotation **completed_term_buffer,
         int num_completed_terms, int *sampled_completed_term_ixes, real *ctx_embeddings,
         long long embedding_size, int window_start, int window_end, int target,
@@ -98,12 +93,6 @@ void AddContextBasedGradients(real *embeddings, long long trg_offset,
         real *gradients, long gradient_start_ix, real *pos_ctx_gradients,
         long pos_ctx_gradient_start_ix, real *neg_ctx_gradients,
         long neg_ctx_gradient_start_ix, long long embedding_size, real constant_weight);
-void AddMemberWordBasedGradients(real *term_embeddings, int term_ix,
-        long long term_offset, real *combined_word_embeddings,
-        long long word_comb_offset, int *member_words, int num_tokens,
-        struct term_monogamy_map *monomap, real *term_gradients,
-        long term_gradient_start_ix, real *member_word_gradients,
-        long member_word_gradient_start_ix, long long embedding_size);
 int RandomSubwindowSkip(int window_size);
 void InitDownsamplingTable(real **downsampling_table, struct vocabulary *v, real downsampling_rate);
 void DestroyDownsamplingTable(real **downsampling_table);
