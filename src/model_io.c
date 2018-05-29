@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <time.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "io.h"
 #include "vocab.h"
 #include "entities.h"
@@ -10,6 +12,23 @@
 #include "monogamy.h"
 #include "model.h"
 #include "model_io.h"
+
+/**
+ * Create model directory, if it does not exist
+ */
+void CreateModelDirectory(char *dirpath) {
+    struct stat st = {0};
+    // check if it already exists
+    if (stat(dirpath, &st) == -1) {
+        // if it doesn't, create it with owner-only permissions
+        mkdir(dirpath, 0700);
+        // verify successful creation
+        if (stat(dirpath, &st) == -1) {
+            error("Unable to create model directory %s\n", dirpath);
+            exit(1);
+        }
+    }
+}
 
 /**
  * Write embeddings to a file, formatted as:

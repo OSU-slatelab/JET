@@ -59,9 +59,11 @@
 // plaintext and standoff annotations
 char plaintext_corpus_file[MAX_FILENAME_SIZE], corpus_annotations_file[MAX_FILENAME_SIZE];
 
-// files for saving vectors
+// model files
+char model_dir[MAX_FILENAME_SIZE];
 char word_vectors_file[MAX_FILENAME_SIZE], term_vectors_file[MAX_FILENAME_SIZE], 
      entity_vectors_file[MAX_FILENAME_SIZE], context_vectors_file[MAX_FILENAME_SIZE];
+char param_file[MAX_FILENAME_SIZE];
 
 // vocabulary files
 char wvocab_file[MAX_FILENAME_SIZE];
@@ -72,7 +74,6 @@ char thread_config_file[MAX_FILENAME_SIZE];
 char map_file[MAX_FILENAME_SIZE];
 
 // saving settings
-char param_file[MAX_FILENAME_SIZE];
 struct hyperparameters params;
 
 // configuration flags
@@ -712,8 +713,8 @@ void usage() {
     printf("\t\tUse plaintext corpus in <file> to train the model\n");
     printf("\t-annotations <file>\n");
     printf("\t\tUse annotations in <file> to train the model\n");
-    printf("\t-output <file>\n");
-    printf("\t\tUse <file> to save the resulting entity vectors\n");
+    printf("\t-model <dir>\n");
+    printf("\t\tStore trained word, term, entity, and context vectors in directory <dir>. Will be created with permissions 0700 if does not exist\n");
     printf("\t-size <int>\n");
     printf("\t\tSet size of word vectors; default is 100\n");
     printf("\t-negative <int>\n");
@@ -739,20 +740,10 @@ void usage() {
     printf("\t\tSave the resulting vectors in binary moded; default is 0 (off)\n");
     printf("\t-save-each <int>\n");
     printf("\t\tSave vectors at each iteration; default is 0 (off)\n");
-    printf("\t-save-word-vectors <file>\n");
-    printf("\t\tUse <file> to save the resulting word vectors\n");
-    printf("\t-save-context-vectors filename\n");
-    printf("\t\tDump the context vectors in file <filename>\n");
-    printf("\t-save-term-vectors filename\n");
-    printf("\t\tDump the term vectors in file <filename>\n");
     printf("\t-word-vocab <file>\n");
     printf("\t\tFile to read word vocabulary from; if does not exist, word vocabulary will be learned and written to <file>\n");
     printf("\t--term-vocab <file>\n");
     printf("\t\tFile to read term vocabulary from; if does not exist, term vocabulary will be learned and written to <file>\n");
-    printf("\t-save-entity-likelihoods <file>\n");
-    printf("\t\tSave learned context-independent term-entity likelihoods to <file>\n");
-    printf("\t-save-settings <file>\n");
-    printf("\t\tSave learning settings to <file>\n");
     printf("\t-term-map filename\n");
     printf("\t\tfile mapping terms to entities\n");
     printf("\t-term-map-sep <char>\n");
@@ -780,16 +771,12 @@ void parse_args(int argc, char **argv) {
 
     plaintext_corpus_file[0] = 0;
     corpus_annotations_file[0] = 0;
-    entity_vectors_file[0] = 0;
+    model_dir[0] = 0;
     wvocab_file[0] = 0;
     tvocab_file[0] = 0;
     map_file[0] = 0;
-    word_vectors_file[0] = 0;
-    context_vectors_file[0] = 0;
-    term_vectors_file[0] = 0;
     thread_config_file[0] = 0;
     term_strmap_file[0] = 0;
-    param_file[0] = 0;
 
     if ((i = ArgPos((char *)"-help", argc, argv)) > 0) help = 1;
     if ((i = ArgPos((char *)"-size", argc, argv)) > 0) embedding_size = atoi(argv[i + 1]);
@@ -802,16 +789,12 @@ void parse_args(int argc, char **argv) {
     if ((i = ArgPos((char *)"-binary", argc, argv)) > 0) binary = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-alpha", argc, argv)) > 0) alpha = atof(argv[i + 1]);
     if ((i = ArgPos((char *)"-alpha-schedule", argc, argv)) > 0) alpha_schedule_interval = atoi(argv[i + 1]);
-    if ((i = ArgPos((char *)"-output", argc, argv)) > 0) strcpy(entity_vectors_file, argv[i + 1]);
+    if ((i = ArgPos((char *)"-model", argc, argv)) > 0) strcpy(model_dir, argv[i + 1]);
     if ((i = ArgPos((char *)"-negative", argc, argv)) > 0) negative = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-threads", argc, argv)) > 0) num_threads = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-thread-config", argc, argv)) > 0) strcpy(thread_config_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-min-count", argc, argv)) > 0) min_count = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-sample", argc, argv)) > 0) downsampling_rate = atof(argv[i + 1]);
-    if ((i = ArgPos((char *)"-save-word-vectors", argc, argv)) > 0) strcpy(word_vectors_file, argv[i + 1]);
-    if ((i = ArgPos((char *)"-save-context-vectors", argc, argv)) > 0) strcpy(context_vectors_file, argv[i + 1]);
-    if ((i = ArgPos((char *)"-save-term-vectors", argc, argv)) > 0) strcpy(term_vectors_file, argv[i + 1]);
-    if ((i = ArgPos((char *)"-save-settings", argc, argv)) > 0) strcpy(param_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-iters", argc, argv)) > 0) numiters = atoi(argv[i+1]);
     if ((i = ArgPos((char *)"-save-each", argc, argv)) > 0) save_each_iter = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window_size = atoi(argv[i + 1]);
@@ -834,7 +817,7 @@ int verify_args() {
     // check for required files
     if (plaintext_corpus_file[0] == 0) { printf("must supply -plaintext.\n\n"); return 0; }
     if (corpus_annotations_file[0] == 0) { printf("must supply -annotations.\n\n"); return 0; }
-    if (entity_vectors_file[0] == 0) { printf("must supply -output.\n\n"); return 0; }
+    if (model_dir[0] == 0) { printf("must supply -model.\n\n"); return 0; }
     if (map_file[0] == 0) { printf("must supply -term-map.\n\n"); return 0; }
 
     // validate hyperparameters
@@ -904,6 +887,14 @@ int main(int argc, char **argv) {
     if (random_seed <= 0)
         random_seed = (long)time(NULL);
     init_genrand(random_seed);
+
+    // set up model file paths
+    CreateModelDirectory(model_dir);
+    sprintf(param_file, "%s/config.log", model_dir);
+    sprintf(word_vectors_file, "%s/words.%s", model_dir, (binary == 1) ? "bin" : "txt");
+    sprintf(term_vectors_file, "%s/terms.%s", model_dir, (binary == 1) ? "bin" : "txt");
+    sprintf(entity_vectors_file, "%s/entities.%s", model_dir, (binary == 1) ? "bin" : "txt");
+    sprintf(context_vectors_file, "%s/contexts.%s", model_dir, (binary == 1) ? "bin" : "txt");
 
     // write model settings
     params.plaintext_corpus_file = plaintext_corpus_file;
