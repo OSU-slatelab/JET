@@ -56,14 +56,14 @@ void DestroyModelFlags(struct model_flags **flags);
 
 void InitializeModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
-        real **ctx_norms, real **term_transform_weights, real **ctx_transform_weights,
+        real **ctx_norms,
         real **global_term_entity_likelihoods,
         struct vocabulary *wv, struct vocabulary *tv, struct vocabulary *ev, struct entity_map *em,
         long long embedding_size, int **unitable, real **word_downsampling_table,
         real **term_downsampling_table, real downsampling_rate);
 void DestroyModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
-        real **ctx_norms, real **term_transform_weights, real **ctx_transform_weights,
+        real **ctx_norms,
         real **global_term_entity_likelihoods,
         int **unitable, real **word_downsampling_table, real **term_downsampling_table);
 
@@ -75,7 +75,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,
-        real *global_term_entity_likelihoods, real *term_transform_weights, real *ctx_transform_weights,
+        real *global_term_entity_likelihoods,
         real alpha, long long embedding_size, int negative, real lambda, bool word_burn, bool burning_in,
         struct model_flags *flags);
 
@@ -128,14 +128,6 @@ void AddMemberWordBasedGradients(real *term_embeddings, int term_ix,
         struct term_monogamy_map *monomap, real *term_gradients,
         long term_gradient_start_ix, real *member_word_gradients,
         long member_word_gradient_start_ix, long long embedding_size);
-void AddTermEntitySimilarityBasedGradients(real *term_embeddings, long long term_offset,
-        real *entity_embeddings, long long entity_offset, real *averaged_ctx_embeddings,
-        long long avg_ctx_offset, int *term_pos_ctx_ixes, int window_start, int window_end,
-        int target, real *term_transform_weights, real *ctx_transform_weights,
-        real local_term_entity_likelihood, real *entity_gradients, long entity_gradient_start_ix,
-        real *term_gradients, long term_gradient_start_ix, real *term_pos_ctx_gradients,
-        long long term_pos_ctx_gradient_start_ix, real *term_transform_gradients,
-        real *ctx_transform_gradients, long long embedding_size);
 void AddRegularizationGradient(real lambda, real *embeddings, long long offset,
         real *norms, int ix, real *gradients, long gradient_start_ix,
         long long embedding_size);

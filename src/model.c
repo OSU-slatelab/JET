@@ -83,7 +83,6 @@ void InitModelFlags(struct model_flags **flags) {
         exit(1);
     }
     (*flags)->disable_likelihoods = false;
-    (*flags)->disable_term_similarity = false;
     (*flags)->disable_latency = false;
     (*flags)->disable_regularization = false;
 }
@@ -380,59 +379,17 @@ void DestroyTermEntityLikelihoods(real **global_term_entity_likelihoods) {
 }
 
 /**
- * Initialize interpolation weights for terms and averaged ctx
- * to 0.5 across the board (i.e., start with averaging)
- */
-void InitInterpolationWeights(real **term_transform_weights, real **ctx_transform_weights,
-        long long embedding_size) {
-    long long c;
-
-    *term_transform_weights = malloc(embedding_size * sizeof(real));
-    if (*term_transform_weights == NULL) {
-        error("   >>> Failed to allocate memory for term interpolation weights; Aborting\n");
-        exit(1);
-    }
-    for (c = 0; c < embedding_size; c++) {
-        (*term_transform_weights)[c] = 0.5;
-    }
-
-    *ctx_transform_weights = malloc(embedding_size * sizeof(real));
-    if (*ctx_transform_weights == NULL) {
-        error("   >>> Failed to allocate memory for ctx interpolation weights; Aborting\n");
-        exit(1);
-    }
-    for (c = 0; c < embedding_size; c++) {
-        (*ctx_transform_weights)[c] = 0.5;
-    }
-}
-
-/**
- * Destroy interpolation weights
- */
-void DestroyInterpolationWeights(real **term_transform_weights, real **ctx_transform_weights) {
-    if (*term_transform_weights != NULL) {
-        free(*term_transform_weights);
-        *term_transform_weights = NULL;
-    }
-    if (*ctx_transform_weights != NULL) {
-        free(*ctx_transform_weights);
-        *ctx_transform_weights = NULL;
-    }
-}
-
-/**
  * Wrapper for all model initialization steps
  */
 void InitializeModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
-        real **ctx_norms, real **term_transform_weights, real **ctx_transform_weights,
+        real **ctx_norms,
         real **global_term_entity_likelihoods,
         struct vocabulary *wv, struct vocabulary *tv, struct vocabulary *ev, struct entity_map *em,
         long long embedding_size, int **unitable, real **word_downsampling_table,
         real **term_downsampling_table, real downsampling_rate) {
     InitExpTable();
     InitTermEntityLikelihoods(global_term_entity_likelihoods, tv, em);
-    InitInterpolationWeights(term_transform_weights, ctx_transform_weights, embedding_size);
     InitNet(word_embeddings, term_embeddings, entity_embeddings, ctx_embeddings,
         word_norms, term_norms, entity_norms, ctx_norms, wv, tv, ev, embedding_size);
     InitUnigramTable(unitable, wv);
@@ -444,12 +401,11 @@ void InitializeModel(real **word_embeddings, real **term_embeddings, real **enti
  */
 void DestroyModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
-        real **ctx_norms, real **term_transform_weights, real **ctx_transform_weights,
+        real **ctx_norms,
         real **global_term_entity_likelihoods,
         int **unitable, real **word_downsampling_table, real **term_downsampling_table) {
     DestroyExpTable();
     DestroyTermEntityLikelihoods(global_term_entity_likelihoods);
-    DestroyInterpolationWeights(term_transform_weights, ctx_transform_weights);
     DestroyNet(word_embeddings, term_embeddings, entity_embeddings, ctx_embeddings,
                word_norms, term_norms, entity_norms, ctx_norms);
     DestroyUnigramTable(unitable);
@@ -957,250 +913,6 @@ void AddContextBasedGradients(real *embeddings, long long trg_offset,
 }
 
 
-/**
- * Adds entity, term, ctx, and interpolation gradients based on
- * entity similarity to a * context-sensitive transformation of
- * the mentioning term.
- *
- * Transformed term is calculated as a learned interpolation of
- * the term and its averaged context embeddings:
- *   \hat{t} = (t * w_t) + (AvgCtx_t * w_C)
- *
- * Where w_t and w_C are general (non term-specific) vectors learned
- * from all such transformations.
- *
- * Entity gradients are then weighted by:
- *   (1) context-dependent likelihood of this entity
- *          -> noted P(e|t,C)
- *   (2) log sigmoid gradient of entity and the transformed term
- *          -> noted g(e . \hat{t})
- *
- * The entity gradient is calculated as
- *   g_e = P(e|t,C) * g(e . \hat{t}) * \hat{t}
- * Term gradient is:
- *   g_t = P(e|t,C) * g(e . \hat{t}) * (e * w_t)
- * For each of the |C| context words, its gradient is
- *   g_Ci = P(e|t,C) * g(e . \hat{t}) * (1/|C|) * (e * w_C)
- * The term transformation weight gradient is
- *   g_w_t = P(e|t,C) * g(e . \hat{t}) * (e * t)
- * And the ctx transformation weight gradient is
- *   g_w_C = P(e|t,C) * g(e . \hat{t}) * (e * AvgCtx_t)
- */
-void AddTermEntitySimilarityBasedGradients(real *term_embeddings, long long term_offset,
-        real *entity_embeddings, long long entity_offset, real *averaged_ctx_embeddings,
-        long long avg_ctx_offset, int *term_pos_ctx_ixes, int window_start, int window_end,
-        int target, real *term_transform_weights, real *ctx_transform_weights,
-        real local_term_entity_likelihood, real *entity_gradients, long entity_gradient_start_ix,
-        real *term_gradients, long term_gradient_start_ix, real *term_pos_ctx_gradients,
-        long long term_pos_ctx_gradient_start_ix, real *term_transform_gradients,
-        real *ctx_transform_gradients, long long embedding_size) {
-
-    real dot_product, outer_gradient;
-    real weighted_term_embedding[embedding_size];
-    real weighted_ctx_embedding[embedding_size];
-    real interpolated_term_ctx_embedding[embedding_size];
-    long long c;
-    int a, num_valid_ctx_words;
-    real avg_weight;
-
-    // use the current term and ctx transforms to calculate the interpolated
-    // term transformation
-    for (c = 0; c < embedding_size; c++) {
-        weighted_term_embedding[c] =
-            term_embeddings[term_offset + c] * term_transform_weights[c];
-        weighted_ctx_embedding[c] =
-            averaged_ctx_embeddings[avg_ctx_offset + c] * ctx_transform_weights[c];
-        interpolated_term_ctx_embedding[c] =
-            weighted_term_embedding[c] + weighted_ctx_embedding[c];
-    }
-
-    // dot the entity and interpolated term/ctx
-    dot_product = DotProduct(entity_embeddings, entity_offset,
-        interpolated_term_ctx_embedding, 0, embedding_size);
-    // use it to get the outer gradient of the sigmoid scorer
-    // (pushing the entity towards this term)
-    outer_gradient = CalculateLogSigmoidOuterGradient(dot_product, 1);
-
-    // add in weighted entity gradient
-    #ifdef PRINTGRADIENTS
-    fprintf(stderr, "Entity term-sim based gradient: [ ");
-    #endif
-    for (c = 0; c < embedding_size; c++) {
-        entity_gradients[entity_gradient_start_ix + c] += (
-            local_term_entity_likelihood *
-            outer_gradient *
-            interpolated_term_ctx_embedding[c]
-        );
-        #ifdef PRINTGRADIENTS
-        fprintf(stderr, "%f ",(
-            local_term_entity_likelihood *
-            outer_gradient *
-            interpolated_term_ctx_embedding[c]
-        ));
-        #endif
-    }
-    #ifdef PRINTGRADIENTS
-    fprintf(stderr, "]\n");
-    fflush(stderr);
-    #endif
-    for (c = 0; c < embedding_size; c++) {
-        if (abs(local_term_entity_likelihood*outer_gradient*interpolated_term_ctx_embedding[c]) > 1) {
-            printf("HIGH ENTITY UPDATE: %f\n", local_term_entity_likelihood*outer_gradient*interpolated_term_ctx_embedding[c]);
-            printf("  Local probability: %f\n", local_term_entity_likelihood);
-            printf("  Dot product: %f\n", dot_product);
-            printf("  Outer gradient: %f\n", outer_gradient);
-            printf("  Term weights: [");
-            for (c = 0; c < embedding_size; c++)
-                printf("%f ", term_transform_weights[c]);
-            printf("]\n");
-            printf("  Ctx weights: [");
-            for (c = 0; c < embedding_size; c++)
-                printf("%f ", ctx_transform_weights[c]);
-            printf("]\n");
-            printf("  Term embed: [");
-            for (c = 0; c < embedding_size; c++)
-                printf("%f ", term_embeddings[term_offset+c]);
-            printf("]\n");
-            printf("  Ctx embed: [");
-            for (c = 0; c < embedding_size; c++)
-                printf("%f ", averaged_ctx_embeddings[avg_ctx_offset+c]);
-            printf("]\n");
-            printf("  Weighted term embed: [");
-            for (c = 0; c < embedding_size; c++)
-                printf("%f ", weighted_term_embedding[c]);
-            printf("]\n");
-            printf("  Weighted ctx embed: [");
-            for (c = 0; c < embedding_size; c++)
-                printf("%f ", weighted_ctx_embedding[c]);
-            printf("]\n");
-            printf("  Interpolated embed: [");
-            for (c = 0; c < embedding_size; c++)
-                printf("%f ", interpolated_term_ctx_embedding[c]);
-            printf("]\n");
-            printf("  Entity embed: [");
-            for (c = 0; c < embedding_size; c++)
-                printf("%f ", entity_embeddings[entity_offset+c]);
-            printf("]\n");
-        }
-        break;
-    }
-
-    // add in weighted term gradients
-    #ifdef PRINTGRADIENTS
-    fprintf(stderr, "Term entity-sim based gradient: [ ");
-    #endif
-    for (c = 0; c < embedding_size; c++) {
-        term_gradients[term_gradient_start_ix + c] += (
-            local_term_entity_likelihood *
-            outer_gradient *
-            term_transform_weights[c] *
-            entity_embeddings[entity_offset + c]
-        );
-        #ifdef PRINTGRADIENTS
-        fprintf(stderr, "%f ",(
-            local_term_entity_likelihood *
-            outer_gradient *
-            term_transform_weights[c] *
-            entity_embeddings[entity_offset + c]
-        ));
-        #endif
-    }
-    #ifdef PRINTGRADIENTS
-    fprintf(stderr, "]\n");
-    fflush(stderr);
-    #endif
-
-    // add in weighted gradients for each of the context words
-    num_valid_ctx_words = 0;
-    for (a = window_start; a < window_end; a++) {
-        if (a == target) continue;
-        if (term_pos_ctx_ixes[a] >= 0)
-            num_valid_ctx_words++;
-    }
-    if (num_valid_ctx_words > 0) {
-        avg_weight = 1/(real)num_valid_ctx_words;
-        for (a = window_start; a < window_end; a++) {
-            if (a == target) continue;
-            if (term_pos_ctx_ixes[a] >= 0) {
-                #ifdef PRINTGRADIENTS
-                fprintf(stderr, "Ctx word %d term-entity sim-based gradient: [ ", a);
-                #endif
-                for (c = 0; c < embedding_size; c++) {
-                    term_pos_ctx_gradients[term_pos_ctx_gradient_start_ix + (a * embedding_size) + c] += (
-                        local_term_entity_likelihood *
-                        outer_gradient *
-                        avg_weight *
-                        ctx_transform_weights[c] *
-                        entity_embeddings[entity_offset + c]
-                    );
-                    #ifdef PRINTGRADIENTS
-                    fprintf(stderr, "%f ",(
-                        local_term_entity_likelihood *
-                        outer_gradient *
-                        avg_weight *
-                        ctx_transform_weights[c] *
-                        entity_embeddings[entity_offset + c]
-                    ));
-                    #endif
-                }
-                #ifdef PRINTGRADIENTS
-                fprintf(stderr, "]\n");
-                fflush(stderr);
-                #endif
-            }
-        }
-    }
-
-    // add in weighted term transform gradients
-    #ifdef PRINTGRADIENTS
-    fprintf(stderr, "Term transform gradient: [ ");
-    #endif
-    for (c = 0; c < embedding_size; c++) {
-        term_transform_gradients[c] += (
-            local_term_entity_likelihood *
-            outer_gradient *
-            term_embeddings[term_offset + c] *
-            entity_embeddings[entity_offset + c]
-        );
-        #ifdef PRINTGRADIENTS
-        fprintf(stderr, "%f ",(
-            local_term_entity_likelihood *
-            outer_gradient *
-            term_embeddings[term_offset + c] *
-            entity_embeddings[entity_offset + c]
-        ));
-        #endif
-    }
-    #ifdef PRINTGRADIENTS
-    fprintf(stderr, "]\n");
-    fflush(stderr);
-    #endif
-
-    // add in weighted ctx transform gradients
-    #ifdef PRINTGRADIENTS
-    fprintf(stderr, "Term transform gradient: [ ");
-    #endif
-    for (c = 0; c < embedding_size; c++) {
-        ctx_transform_gradients[c] += (
-            local_term_entity_likelihood *
-            outer_gradient *
-            averaged_ctx_embeddings[avg_ctx_offset + c] *
-            entity_embeddings[entity_offset + c]
-        );
-        #ifdef PRINTGRADIENTS
-        fprintf(stderr, "%f ",(
-            local_term_entity_likelihood *
-            outer_gradient *
-            term_embeddings[term_offset + c] *
-            entity_embeddings[entity_offset + c]
-        ));
-        #endif
-    }
-    #ifdef PRINTGRADIENTS
-    fprintf(stderr, "]\n");
-    fflush(stderr);
-    #endif
-}
 
 /**
  * Add gradient from L2 regularization term
@@ -1247,8 +959,6 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
         real *ctx_norms, real *word_pos_ctx_gradients, real *word_neg_ctx_gradients,
         real *term_pos_ctx_gradients, real *term_neg_ctx_gradients,
         real *ctx_reg_gradients, int *all_ctx_ixes, int num_ctx,
-        real *term_transform_weights, real *term_transform_gradients,
-        real *ctx_transform_weights, real *ctx_transform_gradients,
         real *global_term_entity_likelihoods, real *local_term_entity_likelihoods,
         struct vocabulary *wv, int full_window_size, int target,
         int sub_window_skip, int negative, int max_num_entities, real alpha,
@@ -1412,16 +1122,6 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
     }
 
     if (!word_burn) {
-        // apply term and ctx transform gradients
-        if (!burning_in && !flags->disable_term_similarity) {
-            for (c = 0; c < embedding_size; c++) {
-                term_transform_weights[c]
-                    += (term_transform_gradients[c] * alpha);
-                ctx_transform_weights[c]
-                    += (ctx_transform_gradients[c] * alpha);
-            }
-        }
-
         // apply updates to context-independent (global) term->entity likelihoods
         // update via interpolation:
         //  global_posterior(x) <- (1-alpha)global_prior(x) + (alpha)local_posterior(x)
@@ -1457,8 +1157,7 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
  *      b) entity likelihood
  *   2. Calculate gradients, based on:
  *      a) positive/negative contexts
- *      b) entity-term similarity
- *      c) L2-regularization
+ *      b) L2-regularization
  *   3. Apply batched gradients
  */
 void LearningStep(int *masked_word_context_window, int target, int full_window_size,
@@ -1469,7 +1168,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,
-        real *global_term_entity_likelihoods, real *term_transform_weights, real *ctx_transform_weights,
+        real *global_term_entity_likelihoods,
         real alpha, long long embedding_size, int negative, real lambda, bool word_burn, bool burning_in,
         struct model_flags *flags) {
 
@@ -1540,12 +1239,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     for (i = 0; i < num_completed_terms; i++)
         ttl_num_member_words += completed_term_buffer[i]->num_tokens;
     real *member_word_gradients = MallocOrDie(ttl_num_member_words * embedding_size * sizeof(real), "member word gradients");
-
-    real *term_transform_gradients = NULL, *ctx_transform_gradients = NULL;
-    if (!flags->disable_term_similarity) {
-        term_transform_gradients = MallocOrDie(embedding_size * sizeof(real), "term transform gradients");
-        ctx_transform_gradients = MallocOrDie(embedding_size * sizeof(real), "ctx transform gradients");
-    }
 
 
 
@@ -1677,7 +1370,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     ////////////////////////////////////////////////////////////
 
     if (!word_burn && (!flags->disable_terms || !flags->disable_entities)) {
-        if (!burning_in && (!flags->disable_latency || !flags->disable_term_similarity)) {
+        if (!burning_in && (!flags->disable_latency)) {
             CalculateAverageContextEmbeddings(completed_term_buffer,
                 num_completed_terms, sampled_completed_term_ixes,
                 ctx_embeddings, embedding_size, sub_window_skip,
@@ -1747,12 +1440,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     if (!flags->disable_regularization) {
         for (c = 0; c < num_ctx * embedding_size; c++)
             ctx_reg_gradients[c] = 0;
-    }
-    if (!flags->disable_term_similarity) {
-        for (c = 0; c < embedding_size; c++) {
-            term_transform_gradients[c] = 0;
-            ctx_transform_gradients[c] = 0;
-        }
     }
 
     // (1) Word gradients
@@ -1859,19 +1546,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
                                 #endif
                             }
 
-                            // (3.2) entity-term similarity gradients
-                            if (!burning_in && !flags->disable_term_similarity) {
-                                AddTermEntitySimilarityBasedGradients(term_embeddings, term_offsets[i],
-                                    entity_embeddings, entity_offsets[term_entity_block_start + j],
-                                    averaged_ctx_embeddings, i*embedding_size, completed_term_buffer[i]->contexts,
-                                    sub_window_skip, full_window_size - sub_window_skip, target, term_transform_weights,
-                                    ctx_transform_weights, local_term_entity_likelihoods[term_entity_block_start + j],
-                                    entity_gradients, entity_gradient_offset, term_gradients, term_gradient_offset,
-                                    term_pos_ctx_gradients, i * full_window_size * embedding_size,
-                                    term_transform_gradients, ctx_transform_gradients, embedding_size);
-                            }
-
-                            // (3.3) entity regularization gradient
+                            // (3.2) entity regularization gradient
                             if (!flags->disable_regularization) {
                                 // First, check to see if we've already grabbed a regularization
                                 // gradient for this entity
@@ -1946,8 +1621,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         masked_word_context_window, word_negative_samples, completed_term_buffer,
         term_negative_samples, ctx_embeddings, ctx_norms, word_pos_ctx_gradients,
         word_neg_ctx_gradients, term_pos_ctx_gradients, term_neg_ctx_gradients, ctx_reg_gradients,
-        all_ctx_ixes, num_ctx, term_transform_weights, term_transform_gradients,
-        ctx_transform_weights, ctx_transform_gradients,global_term_entity_likelihoods,
+        all_ctx_ixes, num_ctx, global_term_entity_likelihoods,
         local_term_entity_likelihoods, wv, full_window_size, target, sub_window_skip,
         negative, max_num_entities, alpha, embedding_size, word_burn, burning_in, flags);
 
@@ -2003,6 +1677,4 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
 
     FreeAndNull((void *)&member_word_gradients);
 
-    FreeAndNull((void *)&term_transform_gradients);
-    FreeAndNull((void *)&ctx_transform_gradients);
 }

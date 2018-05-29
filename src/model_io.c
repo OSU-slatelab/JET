@@ -142,28 +142,6 @@ void WriteTermEntityLikelihoods(char *f, struct vocabulary *tv, struct entity_ma
 }
 
 /**
- * Write term and ctx interpolation weights to a file, formatted as
- *  <Term Dim i> <Ctx Dim i>
- */
-void WriteInterpolationWeights(char *f, real *term_transform_weights, real *ctx_transform_weights,
-        long long embedding_size) {
-    long long c;
-
-    FILE *fo = fopen(f, "wb");
-    // error check
-    if (fo == NULL) {
-        error("Unable to write interpolation weights to file %s, check if the directory exists\n", f);
-        exit(1);
-    }
-    // for each dimension, write the term and ctx transform values
-    for (c = 0; c < embedding_size; c++) {
-        fprintf(fo, "%f %f\n", term_transform_weights[c], ctx_transform_weights[c]);
-    }
-
-    fclose(fo);
-}
-
-/**
  * Write hyperparameters and all other training settings to file,
  * for replicability
  */
@@ -209,8 +187,6 @@ void WriteHyperparameters(char *f, struct hyperparameters params) {
     if (params.flags->disable_entities) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Term-entity likelihoods: ");
     if (params.flags->disable_likelihoods) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
-    fprintf(fo, "\n  Term-entity similarity: ");
-    if (params.flags->disable_term_similarity) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Term latency: ");
     if (params.flags->disable_latency) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Regularization: ");
@@ -238,7 +214,6 @@ void WriteHyperparameters(char *f, struct hyperparameters params) {
     fprintf(fo, "  Entity embeddings file: %s\n", params.entity_vectors_file);
     fprintf(fo, "  Context embeddings file: %s\n", params.context_vectors_file);
     fprintf(fo, "  Term-entity likelihoods file: %s\n", params.term_entity_likelihood_file);
-    fprintf(fo, "  Interpolation weights file: %s\n", params.interpolation_weights_file);
 
     fclose(fo);
 }
