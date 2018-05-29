@@ -756,7 +756,7 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
         real *local_term_entity_likelihoods,
         struct vocabulary *wv, int full_window_size, int target,
         int sub_window_skip, int negative, int max_num_entities, real alpha,
-        long long embedding_size, bool word_burn, bool burning_in, struct model_flags *flags) {
+        long long embedding_size, bool word_burn, struct model_flags *flags) {
 
     long long c;
     int ctx_ix;
@@ -914,7 +914,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,
-        real alpha, long long embedding_size, int negative, bool word_burn, bool burning_in,
+        real alpha, long long embedding_size, int negative, bool word_burn,
         struct model_flags *flags) {
 
     int i, j, k, l, ctr, ix;
@@ -1248,7 +1248,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         word_neg_ctx_gradients, term_pos_ctx_gradients, term_neg_ctx_gradients, ctx_reg_gradients,
         all_ctx_ixes, num_ctx, local_term_entity_likelihoods, wv, full_window_size, target,
         sub_window_skip, negative, max_num_entities, alpha, embedding_size, word_burn,
-        burning_in, flags);
+        flags);
 
 
     /////////////////////////////

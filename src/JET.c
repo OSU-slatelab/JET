@@ -97,7 +97,7 @@ long long alpha_schedule_interval = 10000;
 real *word_embeddings, *term_embeddings, *entity_embeddings, *ctx_embeddings;
 real *word_norms, *term_norms, *entity_norms, *ctx_norms;
 int numiters = 5;
-int word_burn_iters = 0, burn_in_iters = 0;
+int word_burn_iters = 0;
 char *str_map_sep;
 
 // pre-initialization
@@ -204,7 +204,7 @@ void *TrainModelThread(void *arguments) {
     long long corpus_token_count = wv->word_count;
     long long thread_word_count, last_report_word_count, last_alpha_word_count;
     bool halting;
-    bool word_burn = false, burning_in = false;
+    bool word_burn = false;
 
 
     // open up files
@@ -229,8 +229,6 @@ void *TrainModelThread(void *arguments) {
         // check if we're still in the burn-in iterations
         if (iter < word_burn_iters) word_burn = true;
         else word_burn = false;
-        if (iter < burn_in_iters) burning_in = true;
-        else burning_in = false;
         
         // start bytes are pre-calculated to put us at the (aligned) start of a word,
         // and not in the middle of a multi-word term
@@ -328,7 +326,7 @@ void *TrainModelThread(void *arguments) {
                     max_num_entities, word_embeddings, term_embeddings, entity_embeddings,
                     ctx_embeddings, word_norms, term_norms, entity_norms, ctx_norms,
                     entity_update_counters, ctx_update_counters,
-                    alpha, embedding_size, negative, word_burn, burning_in, flags);
+                    alpha, embedding_size, negative, word_burn, flags);
             }
 
 
@@ -752,8 +750,6 @@ void usage() {
     printf("\t\tSet the scheduling interval for decreasing the learning rate; 0 for no scheduling, default is 10,000 words\n");
     printf("\t-iters <int>\n");
     printf("\t\tPerform i iterations over the data; default is %d\n", numiters);
-    printf("\t-burn-in-iters <int>\n");
-    printf("\t\tUse only context information for the first <num> iterations; default is %d\n", burn_in_iters);
     printf("\t-word-burn-iters <int>\n");
     printf("\t\tOnly update words for the first <num> iterations; default is %d\n", word_burn_iters);
     printf("\t-binary <int>\n");
@@ -834,7 +830,6 @@ void parse_args(int argc, char **argv) {
     if ((i = ArgPos((char *)"-save-term-vectors", argc, argv)) > 0) strcpy(term_vectors_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-save-settings", argc, argv)) > 0) strcpy(param_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-iters", argc, argv)) > 0) numiters = atoi(argv[i+1]);
-    if ((i = ArgPos((char *)"-burn-in-iters", argc, argv)) > 0) burn_in_iters = atoi(argv[i+1]);
     if ((i = ArgPos((char *)"-word-burn-iters", argc, argv)) > 0) word_burn_iters = atoi(argv[i+1]);
     if ((i = ArgPos((char *)"-save-each", argc, argv)) > 0) save_each_iter = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window_size = atoi(argv[i + 1]);
@@ -865,10 +860,6 @@ int verify_args() {
         printf("-word-burn-iters must be less than -iters.\n\n");
         return 0;
     }
-    if (burn_in_iters >= numiters) {
-        printf("-burn-in-iters must be less than -iters.\n\n");
-        return 0;
-    }
 
     // validate hyperparameters
     if (window_size <= 0) {
@@ -893,10 +884,6 @@ int verify_args() {
     }
     if (numiters <= 0) {
         printf("-iters must be greater than 0.\n\n");
-        return 0;
-    }
-    if (burn_in_iters < 0) {
-        printf("-burn-in-iters must be 0 or greater.\n\n");
         return 0;
     }
     if (word_burn_iters < 0) {
@@ -950,7 +937,6 @@ int main(int argc, char **argv) {
     params.plaintext_corpus_file = plaintext_corpus_file;
     params.corpus_annotations_file = corpus_annotations_file;
     params.numiters = numiters;
-    params.burn_in_iters = burn_in_iters;
     params.word_burn_iters = word_burn_iters;
     params.window = window_size;
     params.min_count = min_count;

@@ -133,7 +133,6 @@ void WriteHyperparameters(char *f, struct hyperparameters params) {
     fprintf(fo, "Generated: %s\n", time_buf);
     fprintf(fo, "\n== Model parameters ==\n");
     fprintf(fo, "  # of iterations: %d\n", params.numiters);
-    fprintf(fo, "  # of burn-in iterations: %d\n", params.burn_in_iters);
     fprintf(fo, "  # of word burn-in iterations: %d\n", params.word_burn_iters);
     fprintf(fo, "  Window size: %d\n", params.window);
     fprintf(fo, "  Minimum frequency: %d\n", params.min_count);
