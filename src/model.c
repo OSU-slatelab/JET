@@ -82,6 +82,9 @@ void InitModelFlags(struct model_flags **flags) {
         error("   >>> Failed to initialize model flags; Aborting\n");
         exit(1);
     }
+    (*flags)->disable_words = false;
+    (*flags)->disable_terms = false;
+    (*flags)->disable_entities = false;
 }
 /**
  * Destroy model flags

@@ -785,14 +785,12 @@ void usage() {
     printf("\nDEBUGGING OPTIONS\n");
     printf("\t-random-seed <seed>\n");
     printf("\t\tDebugging option; allows for a hard seed to the random number generator, for replicable behavior\n");
-    printf("\t-disable-likelihoods\n");
-    printf("\t\tDisables term-entity likelihood-based learning\n");
     printf("\t-disable-words\n");
     printf("\t\tDisables word training\n");
     printf("\t-disable-terms\n");
-    printf("\t\tDisables term training (disabled likelihoods as well)\n");
+    printf("\t\tDisables term training\n");
     printf("\t-disable-entities\n");
-    printf("\t\tDisables entity training (disabled likelihoods as well)\n");
+    printf("\t\tDisables entity training\n");
     // TODO: fix example
     printf("\nExamples:\n");
     printf("./word2vecf -train data.txt -wvocab wv -cvocab ev -tvocab tv -output vec.txt -size 200 -negative 5 -threads 10 \n\n");
