@@ -1,0 +1,4 @@
+*.swp
+.config.sh
+bin
+src/.nfs*

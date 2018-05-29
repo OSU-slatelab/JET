@@ -69,7 +69,6 @@ char wvocab_file[MAX_FILENAME_SIZE];
 char tvocab_file[MAX_FILENAME_SIZE];
 
 // other files
-char term_compositionality_file[MAX_FILENAME_SIZE];
 char term_entity_likelihood_file[MAX_FILENAME_SIZE];
 char interpolation_weights_file[MAX_FILENAME_SIZE];
 char thread_config_file[MAX_FILENAME_SIZE];
@@ -100,7 +99,6 @@ long long alpha_schedule_interval = 10000;
 real lambda = 0.0;
 real *word_embeddings, *term_embeddings, *entity_embeddings, *ctx_embeddings;
 real *word_norms, *term_norms, *entity_norms, *ctx_norms;
-real *term_compositionality_scores;
 real *term_entity_likelihoods;
 real *term_transform_weights, *ctx_transform_weights;
 int numiters = 5;
@@ -334,7 +332,7 @@ void *TrainModelThread(void *arguments) {
                     word_negative_samples, term_negative_samples, wv, tv, ev, termmap, monomap,
                     max_num_entities, word_embeddings, term_embeddings, entity_embeddings,
                     ctx_embeddings, word_norms, term_norms, entity_norms, ctx_norms,
-                    entity_update_counters, ctx_update_counters, term_compositionality_scores,
+                    entity_update_counters, ctx_update_counters,
                     term_entity_likelihoods, term_transform_weights, ctx_transform_weights,
                     alpha, embedding_size, negative, lambda, word_burn, burning_in, flags);
             }
@@ -462,15 +460,6 @@ void SaveModel(bool for_iter, int iter) {
     info("   Saving entity embeddings to %s...", this_file);
     WriteVectors(this_file, ev, entity_embeddings, embedding_size, binary);
     info("Done.\n");
-
-    // save term compositionality scores
-    if (term_compositionality_file[0] != 0) {
-        if (for_iter) sprintf(this_file, "%s.iter%d", term_compositionality_file, iter);
-        else strcpy(this_file, term_compositionality_file);
-        info("   Saving term compositionality scores to %s...", this_file);
-        WriteCompositionalityScores(this_file, tv, term_compositionality_scores);
-        info("Done.\n");
-    }
 
     // save term-entity likelihoods
     if (term_entity_likelihood_file[0] != 0) {
@@ -806,8 +795,6 @@ void usage() {
     printf("\t\tFile to read word vocabulary from; if does not exist, word vocabulary will be learned and written to <file>\n");
     printf("\t--term-vocab <file>\n");
     printf("\t\tFile to read term vocabulary from; if does not exist, term vocabulary will be learned and written to <file>\n");
-    printf("\t-save-term-compositionality <file>\n");
-    printf("\t\tSave learned compositionality scores for each term to <file>\n");
     printf("\t-save-entity-likelihoods <file>\n");
     printf("\t\tSave learned context-independent term-entity likelihoods to <file>\n");
     printf("\t-save-settings <file>\n");
@@ -825,11 +812,8 @@ void usage() {
     printf("\nDEBUGGING OPTIONS\n");
     printf("\t-random-seed <seed>\n");
     printf("\t\tDebugging option; allows for a hard seed to the random number generator, for replicable behavior\n");
-    printf("\t-disable-compositionality\n");
-    printf("\t\tDisables compositionality-based learning\n");
     printf("\t-disable-likelihoods\n");
     printf("\t\tDisables term-entity likelihood-based learning\n");
-    printf("\nExamples:\n");
     printf("\t-disable-term-similarity\n");
     printf("\t\tDisable term similarity-based update in entity learning\n");
     printf("\t-disable-latency\n");
@@ -837,9 +821,10 @@ void usage() {
     printf("\t-disable-words\n");
     printf("\t\tDisables word training\n");
     printf("\t-disable-terms\n");
-    printf("\t\tDisables term training (disabled compositionality, likelihoods, term-similarity, and latency as well)\n");
+    printf("\t\tDisables term training (disabled likelihoods, term-similarity, and latency as well)\n");
     printf("\t-disable-entities\n");
-    printf("\t\tDisables entity training (disabled compositionality, likelihoods, term-similarity, and latency as well)\n");
+    printf("\t\tDisables entity training (disabled likelihoods, term-similarity, and latency as well)\n");
+    printf("\nExamples:\n");
     printf("./word2vecf -train data.txt -wvocab wv -cvocab ev -tvocab tv -output vec.txt -size 200 -negative 5 -threads 10 \n\n");
 }
 
@@ -857,7 +842,6 @@ void parse_args(int argc, char **argv) {
     term_vectors_file[0] = 0;
     thread_config_file[0] = 0;
     term_strmap_file[0] = 0;
-    term_compositionality_file[0] = 0;
     term_entity_likelihood_file[0] = 0;
     interpolation_weights_file[0] = 0;
     param_file[0] = 0;
@@ -882,7 +866,6 @@ void parse_args(int argc, char **argv) {
     if ((i = ArgPos((char *)"-save-word-vectors", argc, argv)) > 0) strcpy(word_vectors_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-save-context-vectors", argc, argv)) > 0) strcpy(context_vectors_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-save-term-vectors", argc, argv)) > 0) strcpy(term_vectors_file, argv[i + 1]);
-    if ((i = ArgPos((char *)"-save-term-compositionality", argc, argv)) > 0) strcpy(term_compositionality_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-save-entity-likelihoods", argc, argv)) > 0) strcpy(term_entity_likelihood_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-save-interpolation-weights", argc, argv)) > 0) strcpy(interpolation_weights_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-save-settings", argc, argv)) > 0) strcpy(param_file, argv[i + 1]);
@@ -895,7 +878,6 @@ void parse_args(int argc, char **argv) {
     if ((i = ArgPos((char *)"-lambda", argc, argv)) > 0) lambda = atof(argv[i + 1]);
     // debug options
     if ((i = ArgPos((char *)"-random-seed", argc, argv)) > 0) random_seed = atol(argv[i + 1]);
-    if ((i = FlagPos((char *)"-disable-compositionality", argc, argv)) > 0) flags->disable_compositionality = true;
     if ((i = FlagPos((char *)"-disable-likelihoods", argc, argv)) > 0) flags->disable_likelihoods = true;
     if ((i = FlagPos((char *)"-disable-term-similarity", argc, argv)) > 0) flags->disable_term_similarity = true;
     if ((i = FlagPos((char *)"-disable-latency", argc, argv)) > 0) flags->disable_latency = true;
@@ -913,7 +895,6 @@ void parse_args(int argc, char **argv) {
     // handle component disabling overrides
     if (flags->disable_terms || flags->disable_entities) {
         flags->disable_latency = true;
-        flags->disable_compositionality = true;
         flags->disable_term_similarity = true;
         flags->disable_likelihoods = true;
     }
@@ -921,7 +902,6 @@ void parse_args(int argc, char **argv) {
     // override everything
     lambda = 0;
     flags->disable_latency = true;
-    flags->disable_compositionality = true;
     flags->disable_term_similarity = true;
     flags->disable_likelihoods = true;
 
@@ -1008,8 +988,7 @@ int main(int argc, char **argv) {
     if (!verify_args()) { return 0; }
 
     // give notice of any disabled model components
-    if (flags->disable_compositionality
-            || flags->disable_likelihoods 
+    if (flags->disable_likelihoods 
             || flags->disable_term_similarity
             || flags->disable_latency
             || flags->disable_regularization
@@ -1019,8 +998,6 @@ int main(int argc, char **argv) {
         info("=== Model overrides ===\n");
         if (flags->disable_likelihoods)
             info("  Term-entity likelihood learning: DISABLED\n");
-        if (flags->disable_compositionality)
-            info("  Term compositionality learning: DISABLED\n");
         if (flags->disable_term_similarity)
             info("  Term similarity-based learning: DISABLED\n");
         if (flags->disable_latency)
@@ -1067,7 +1044,6 @@ int main(int argc, char **argv) {
     params.term_vectors_file = term_vectors_file;
     params.entity_vectors_file = entity_vectors_file;
     params.context_vectors_file = context_vectors_file;
-    params.term_compositionality_file = term_compositionality_file;
     params.term_entity_likelihood_file = term_entity_likelihood_file;
     params.interpolation_weights_file = interpolation_weights_file;
     // TODO: make this required
@@ -1111,7 +1087,7 @@ int main(int argc, char **argv) {
     info("\nInitializing model...\n");
     InitializeModel(&word_embeddings, &term_embeddings, &entity_embeddings, &ctx_embeddings,
         &word_norms, &term_norms, &entity_norms, &ctx_norms, &term_transform_weights,
-        &ctx_transform_weights, &term_compositionality_scores, &term_entity_likelihoods,
+        &ctx_transform_weights, &term_entity_likelihoods,
         wv, tv, ev, termmap, embedding_size, &unitable, &word_downsampling_table,
         &term_downsampling_table, downsampling_rate);
 
@@ -1130,7 +1106,7 @@ int main(int argc, char **argv) {
     DestroyMonogamyMap(&monomap);
     DestroyModel(&word_embeddings, &term_embeddings, &entity_embeddings, &ctx_embeddings,
         &word_norms, &term_norms, &entity_norms, &ctx_norms, &term_transform_weights,
-        &ctx_transform_weights, &term_compositionality_scores, &term_entity_likelihoods,
+        &ctx_transform_weights, &term_entity_likelihoods,
         &unitable, &word_downsampling_table, &term_downsampling_table);
     DestroyThreadConfigurations(&thread_tokens, &thread_start_bytes_plain,
         &thread_start_bytes_annot, &thread_start_offsets_annot);

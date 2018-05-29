@@ -82,7 +82,6 @@ void InitModelFlags(struct model_flags **flags) {
         error("   >>> Failed to initialize model flags; Aborting\n");
         exit(1);
     }
-    (*flags)->disable_compositionality = false;
     (*flags)->disable_likelihoods = false;
     (*flags)->disable_term_similarity = false;
     (*flags)->disable_latency = false;
@@ -339,30 +338,6 @@ void DestroyDownsamplingTable(real **downsampling_table) {
 }
 
 /**
- * Initialize term compositionality scores (range [-1,1]);
- * by default, all start at 0.
- */
-void InitCompositionalityScores(real **global_term_compositionality_scores, struct vocabulary *tv) {
-    *global_term_compositionality_scores = malloc(tv->vocab_size * sizeof(real));
-    if (*global_term_compositionality_scores == NULL) {
-        error("   >>> Failed to allocate memory for term compositionality scores; Aborting\n");
-        exit(1);
-    }
-    for (int i = 0; i < tv->vocab_size; i++) {
-        (*global_term_compositionality_scores)[i] = 0;
-    }
-}
-/**
- * Destroy term compositionality scores
- */
-void DestroyCompositionalityScores(real **global_term_compositionality_scores) {
-    if (*global_term_compositionality_scores != NULL) {
-        free(*global_term_compositionality_scores);
-        *global_term_compositionality_scores = NULL;
-    }
-}
-
-/**
  * Initialize prior probability distribution over possible concepts for each term.
  * Term-entity likelihoods are aligned to vocabulary indices; each term is given
  * MaxNumEntities(em) slots for likelihoods.
@@ -451,12 +426,11 @@ void DestroyInterpolationWeights(real **term_transform_weights, real **ctx_trans
 void InitializeModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
         real **ctx_norms, real **term_transform_weights, real **ctx_transform_weights,
-        real **global_term_compositionality_scores, real **global_term_entity_likelihoods,
+        real **global_term_entity_likelihoods,
         struct vocabulary *wv, struct vocabulary *tv, struct vocabulary *ev, struct entity_map *em,
         long long embedding_size, int **unitable, real **word_downsampling_table,
         real **term_downsampling_table, real downsampling_rate) {
     InitExpTable();
-    InitCompositionalityScores(global_term_compositionality_scores, tv);
     InitTermEntityLikelihoods(global_term_entity_likelihoods, tv, em);
     InitInterpolationWeights(term_transform_weights, ctx_transform_weights, embedding_size);
     InitNet(word_embeddings, term_embeddings, entity_embeddings, ctx_embeddings,
@@ -471,10 +445,9 @@ void InitializeModel(real **word_embeddings, real **term_embeddings, real **enti
 void DestroyModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
         real **ctx_norms, real **term_transform_weights, real **ctx_transform_weights,
-        real **global_term_compositionality_scores, real **global_term_entity_likelihoods,
+        real **global_term_entity_likelihoods,
         int **unitable, real **word_downsampling_table, real **term_downsampling_table) {
     DestroyExpTable();
-    DestroyCompositionalityScores(global_term_compositionality_scores);
     DestroyTermEntityLikelihoods(global_term_entity_likelihoods);
     DestroyInterpolationWeights(term_transform_weights, ctx_transform_weights);
     DestroyNet(word_embeddings, term_embeddings, entity_embeddings, ctx_embeddings,
@@ -733,42 +706,6 @@ void CalculateLocalTermLatencyScores(struct term_annotation **completed_term_buf
     }
 }
 
-/**
- * Given a set of term mentions with individual surface forms,
- * calculate a context-dependent compositionality score
- * for each term.
- *
- * For term t with member words W, this is calculated as:
- *   comp_t <- cos(e_t, \sum_{w \in W} e_w)
- */
-/*
-void CalculateLocalTermCompositionalityScores(struct term_annotation **completed_term_buffer,
-        int num_completed_terms, int *sampled_completed_term_ixes, long long embedding_size,
-        real *term_embeddings, real *term_norms, real *averaged_word_embeddings,
-        real *local_term_compositionality_scores) {
-    long long word_avg_offset, term_offset;
-    int i, term_ix;
-    real cos_sim;
-
-    for (i = 0; i < num_completed_terms; i++) {
-        if (sampled_completed_term_ixes[i] >= 0) {
-            term_ix = sampled_completed_term_ixes[i];
-            term_offset = term_ix * embedding_size;
-            word_avg_offset = i * embedding_size;
-
-            // calculate cosine similarity
-            cos_sim = CosineSimilarity(term_embeddings, term_offset,
-                averaged_word_embeddings, word_avg_offset, term_norms[term_ix],
-                Norm(averaged_word_embeddings, word_avg_offset, embedding_size),
-                embedding_size);
-
-            // and store in the compositionality posteriors
-            local_term_compositionality_scores[i] = cos_sim;
-        }
-    }
-}
-*/
-
 
 /**
  * Given a set of term mentions with individual context windows,
@@ -1019,145 +956,6 @@ void AddContextBasedGradients(real *embeddings, long long trg_offset,
     #endif
 }
 
-
-/**
- * Calculates term gradients based on their similarity to their member words,
- * and adds to the current gradient vector.
- *
- * Let W' be the average embedding of the member words of t, and let comp[t]
- * be the current compositionality score of t.
- * Then, the compositionality gradient is calculated as:
- *   g_t = grad(e_t . W', 1) * mono[t] * W'
- *   \forall w \in W'
- *      g_w = grad(e_t . W', 1) * mono[t] * P(t|w) * t
- */
-void AddMemberWordBasedGradients(real *term_embeddings, int term_ix,
-        long long term_offset, real *combined_word_embeddings,
-        long long word_comb_offset, int *member_words, int num_tokens,
-        struct term_monogamy_map *monomap, real *term_gradients,
-        long term_gradient_start_ix, real *member_word_gradients,
-        long member_word_gradient_start_ix, long long embedding_size) {
-    int i, known_member_words;
-    long word_gradient_start;
-    long long c;
-    real combined_word_norm;
-    real dot_product, outer_gradient;
-    real monogamy_weight, word_monogamy_weight;
-
-    // flip the monogamy weight for downweighting the update;
-    // if it's too low, just ignore these gradients entirely
-    monogamy_weight = 1 - monomap->monogamies[term_ix].monogamy_weight;
-    if (monogamy_weight <= 0.00001) return;
-
-    combined_word_norm = Norm(combined_word_embeddings, word_comb_offset, embedding_size);
-
-    // gradient is non-zero only if there was at least one known member word
-    if (combined_word_norm > 0) {
-        
-        // dot the current term and the combined member words
-        dot_product = DotProduct(term_embeddings, term_offset,
-            combined_word_embeddings, word_comb_offset, embedding_size);
-
-        // calculate the outer gradient of the sigmoid scorer
-        // (pushing the term towards its weighted member words)
-        outer_gradient = CalculateLogSigmoidOuterGradient(dot_product, 1);
-
-        // add in the weighted term gradient
-        #ifdef PRINTGRADIENTS
-        fprintf(stderr, "Term member-word based gradient: [ ");
-        #endif
-        for (c = 0; c < embedding_size; c++) {
-            term_gradients[term_gradient_start_ix + c] += (
-                outer_gradient *
-                monogamy_weight *
-                combined_word_embeddings[word_comb_offset + c]
-            );
-            #ifdef PRINTGRADIENTS
-            fprintf(stderr, "%f ",(
-                outer_gradient *
-                monogamy_weight *
-                combined_word_embeddings[word_comb_offset + c]
-            ));
-            #endif
-        }
-        #ifdef PRINTGRADIENTS
-        fprintf(stderr, "]\n");
-        #endif
-        /*
-        for (c = 0; c < embedding_size; c++) {
-            if (abs(outer_gradient*compositionality_weight*combined_word_embeddings[word_avg_offset+c]) > 1) {
-                printf("HIGH TERM UPDATE: %f\n", term_gradients[term_gradient_start_ix + c]);
-                printf("  Comp weight: %f\n", compositionality_weight);
-                printf("  Dot product: %f\n", dot_product);
-                printf("  Outer gradient: %f\n", outer_gradient);
-                printf("  Weighted avg word embed: [");
-                for (c = 0; c < embedding_size; c++)
-                    printf("%f ", weighted_combined_word_embeddings[c]);
-                printf("]\n");
-                printf("  Avg word embed: [");
-                for (c = 0; c < embedding_size; c++)
-                    printf("%f ", combined_word_embeddings[word_avg_offset+c]);
-                printf("]\n");
-                printf("  Term embed: [");
-                for (c = 0; c < embedding_size; c++)
-                    printf("%f ", term_embeddings[term_offset+c]);
-                printf("]\n");
-            }
-            break;
-        }
-        */
-
-        // count the number of known member words
-        known_member_words = 0;
-        for (i = 0; i < num_tokens; i++) {
-            if (member_words[i] >= 0)
-                known_member_words++;
-        }
-
-        // and add in the weighted gradients for the member words
-        for (i = 0; i < num_tokens; i++) {
-            if (member_words[i] >= 0) {
-                word_monogamy_weight = monomap->monogamies[term_ix].by_word[i];
-
-                #ifdef PRINTGRADIENTS
-                fprintf(stderr, "Word %d term-based gradient: [ ", member_words[i]);
-                #endif
-                word_gradient_start = member_word_gradient_start_ix + (i * embedding_size);
-                for (c = 0; c < embedding_size; c++) {
-                    member_word_gradients[word_gradient_start + c] += (
-                        monogamy_weight *
-                        outer_gradient *
-                        (1/(real)known_member_words) *
-                        word_monogamy_weight *
-                        term_embeddings[term_offset + c]
-                    );
-                    /*
-                    if (abs(outer_gradient*(1/(real)known_member_words)*compositionality_weight*term_embeddings[term_offset+c]) > 1) {
-                        printf("HIGH WORD UPDATE: %f\n", outer_gradient*(1/(real)known_member_words)*compositionality_weight*term_embeddings[term_offset+c]);
-                        printf("  Comp weight: %f\n", compositionality_weight);
-                        printf("  Dot product: %f\n", dot_product);
-                        printf("  Outer gradient: %f\n", outer_gradient);
-                        printf("  Term embed: %f\n", term_embeddings[term_offset + c]);
-                        printf("  Avg word embed[c]: %f\n", combined_word_embeddings[word_avg_offset + c]);
-                    }
-                    */
-                    #ifdef PRINTGRADIENTS
-                    fprintf(stderr, "%f ",(
-                        monogamy_weight *
-                        outer_gradient *
-                        (1/(real)known_member_words) *
-                        word_monogamy_weight *
-                        term_embeddings[term_offset + c]
-                    ));
-                    #endif
-                }
-                #ifdef PRINTGRADIENTS
-                fprintf(stderr, "]\n");
-                #endif
-            }
-        }
-    }
-}
 
 /**
  * Adds entity, term, ctx, and interpolation gradients based on
@@ -1435,8 +1233,7 @@ void AddRegularizationGradient(real lambda, real *embeddings, long long offset,
  *  2. Term embeddings
  *  3. Entity embeddings
  *  4. Context embeddings
- *  5. Term compositionality scores
- *  6. Term-entity likelihoods
+ *  5. Term-entity likelihoods
  */
 void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
         real *word_gradient, real *member_word_gradients, int ttl_num_member_words,
@@ -1452,16 +1249,14 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
         real *ctx_reg_gradients, int *all_ctx_ixes, int num_ctx,
         real *term_transform_weights, real *term_transform_gradients,
         real *ctx_transform_weights, real *ctx_transform_gradients,
-        real *global_term_compositionality_scores, real *local_term_compositionality_scores,
         real *global_term_entity_likelihoods, real *local_term_entity_likelihoods,
         struct vocabulary *wv, int full_window_size, int target,
         int sub_window_skip, int negative, int max_num_entities, real alpha,
         long long embedding_size, bool word_burn, bool burning_in, struct model_flags *flags) {
 
     long long c;
-    int ctx_ix, member_word_ix;
-    long long ctx_offset, ctx_reg_gradient_offset, member_word_offset,
-        member_word_gradient_offset;
+    int ctx_ix;
+    long long ctx_offset, ctx_reg_gradient_offset;
     int i, j, a, d;
 
     long long term_gradient_offset, term_entity_block_start, word_ctx_block_start,
@@ -1482,37 +1277,6 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
     }
 
     if (!word_burn) {
-        // apply gradients to the member words of the completed terms
-        if (!burning_in && !flags->disable_compositionality) {
-            member_word_gradient_offset = 0;
-            for (i = 0; i < num_completed_terms; i++) {
-                if (term_ixes[i] >= 0) {
-                    for (j = 0; j < completed_term_buffer[i]->num_tokens; j++) {
-                        member_word_ix = completed_term_buffer[i]->member_words[j];
-                        if (member_word_ix >= 0) {
-                            member_word_offset = member_word_ix * embedding_size;
-                            for (c = 0; c < embedding_size; c++)
-                                word_embeddings[member_word_offset + c] += (
-                                //ctx_embeddings[member_word_offset + c] += (
-                                    member_word_gradients[member_word_gradient_offset + c] *
-                                    alpha
-                                );
-                            word_norms[member_word_ix] = Norm(word_embeddings,
-                                member_word_offset, embedding_size);
-                            //ctx_norms[member_word_ix] = Norm(ctx_embeddings,
-                            //    member_word_offset, embedding_size);
-                            /*
-                            if (word_norms[member_word_ix] >= NORM_LIMIT) {
-                                error("   WORD NORM BROKE FIRST: %f\n", word_norms[member_word_ix]);
-                                exit(1);
-                            }
-                            */
-                        }
-                        member_word_gradient_offset += embedding_size;
-                    }
-                }
-            }
-        }
 
         // apply term embedding gradients
         if (!flags->disable_terms) {
@@ -1658,28 +1422,6 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
             }
         }
 
-        // apply updates to the global term compositionality scores
-        // update via interpolation:
-        //  global_posterior(x) <- (1-alpha)global_prior(x) + (alpha)local_posterior(x)
-        /*
-        if (!burning_in && !flags->disable_compositionality) {
-            for (i = 0; i < num_completed_terms; i++) {
-                if (term_ixes[i] >= 0) {
-                    global_term_compositionality_scores[term_ixes[i]] = (
-                        (
-                            (1 - alpha) *
-                            global_term_compositionality_scores[term_ixes[i]]
-                        ) +
-                        (
-                            alpha *
-                            local_term_compositionality_scores[i]
-                        )
-                    );
-                }
-            }
-        }
-        */
-
         // apply updates to context-independent (global) term->entity likelihoods
         // update via interpolation:
         //  global_posterior(x) <- (1-alpha)global_prior(x) + (alpha)local_posterior(x)
@@ -1715,9 +1457,8 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
  *      b) entity likelihood
  *   2. Calculate gradients, based on:
  *      a) positive/negative contexts
- *      b) term compositionality
- *      c) entity-term similarity
- *      d) L2-regularization
+ *      b) entity-term similarity
+ *      c) L2-regularization
  *   3. Apply batched gradients
  */
 void LearningStep(int *masked_word_context_window, int target, int full_window_size,
@@ -1727,7 +1468,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         struct term_monogamy_map *monomap,
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
-        int *entity_update_counters, int *ctx_update_counters, real *global_term_compositionality_scores,
+        int *entity_update_counters, int *ctx_update_counters,
         real *global_term_entity_likelihoods, real *term_transform_weights, real *ctx_transform_weights,
         real alpha, long long embedding_size, int negative, real lambda, bool word_burn, bool burning_in,
         struct model_flags *flags) {
@@ -1750,11 +1491,9 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     long long entity_offsets[num_completed_terms * max_num_entities];
 
     real *local_term_latency_scores = NULL,
-        *local_term_compositionality_scores = NULL,
         *local_term_entity_likelihoods = NULL;
     if (!flags->disable_terms || !flags->disable_entities) {
         local_term_latency_scores = MallocOrDie(num_completed_terms * sizeof(real), "local term latency scores");
-        local_term_compositionality_scores = MallocOrDie(num_completed_terms * sizeof(real), "local term compositionality scores");
         local_term_entity_likelihoods = MallocOrDie(num_completed_terms * max_num_entities * sizeof(real), "local term entity likelihoods");
     }
 
@@ -1801,7 +1540,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     for (i = 0; i < num_completed_terms; i++)
         ttl_num_member_words += completed_term_buffer[i]->num_tokens;
     real *member_word_gradients = MallocOrDie(ttl_num_member_words * embedding_size * sizeof(real), "member word gradients");
-    long long member_word_gradient_offset;
 
     real *term_transform_gradients = NULL, *ctx_transform_gradients = NULL;
     if (!flags->disable_term_similarity) {
@@ -1939,15 +1677,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     ////////////////////////////////////////////////////////////
 
     if (!word_burn && (!flags->disable_terms || !flags->disable_entities)) {
-        //CalculateAverageWordEmbeddings(completed_term_buffer,
-        //    num_completed_terms, sampled_completed_term_ixes,
-        //    word_embeddings, embedding_size, averaged_word_embeddings);
-        if (!burning_in && !flags->disable_compositionality && !flags->disable_terms) {
-            CombineWeightedMemberWordEmbeddings(completed_term_buffer,
-                num_completed_terms, sampled_completed_term_ixes,
-                word_embeddings, monomap, embedding_size, combined_word_embeddings);
-        }
-
         if (!burning_in && (!flags->disable_latency || !flags->disable_term_similarity)) {
             CalculateAverageContextEmbeddings(completed_term_buffer,
                 num_completed_terms, sampled_completed_term_ixes,
@@ -1983,18 +1712,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
             for (i = 0; i < num_completed_terms; i++)
                 local_term_latency_scores[i] = 1;
         }
-
-        /*
-        if (!burning_in && !flags->disable_compositionality) {
-            CalculateLocalTermCompositionalityScores(completed_term_buffer,
-                num_completed_terms, sampled_completed_term_ixes, embedding_size,
-                term_embeddings, term_norms, averaged_word_embeddings,
-                local_term_compositionality_scores);
-        } else {
-            for (i = 0; i < num_completed_terms; i++)
-                local_term_compositionality_scores[i] = 0;
-        }
-        */
     }
 
 
@@ -2071,7 +1788,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
 
     if (!word_burn && (!flags->disable_terms || !flags->disable_entities)) {
         // (2-3) Term/entity gradients
-        member_word_gradient_offset = 0;
         for (i = 0; i < num_completed_terms; i++) {
             if (term_ixes[i] >= 0) {
                 term_block_start = i * full_window_size;
@@ -2098,22 +1814,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
                     #endif
                 }
 
-                // (2.2) add in term->word compositionality gradients
-                // [does not use term latency score]
-                if (!burning_in && !flags->disable_compositionality) {
-                    AddMemberWordBasedGradients(term_embeddings, term_ixes[i],
-                        term_offsets[i], combined_word_embeddings,
-                        i*embedding_size, completed_term_buffer[i]->member_words,
-                        completed_term_buffer[i]->num_tokens, monomap,
-                        term_gradients, term_gradient_offset,
-                        member_word_gradients, member_word_gradient_offset,
-                        embedding_size);
-
-                    member_word_gradient_offset += 
-                        (completed_term_buffer[i]->num_tokens * embedding_size);
-                }
-
-                // (2.3) term regularization gradient
+                // (2.2) term regularization gradient
                 if (!flags->disable_terms || !flags->disable_regularization) {
                     #ifdef PRINTGRADIENTS
                     fprintf(stderr, "Term regularization gradient: [ ");
@@ -2246,8 +1947,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         term_negative_samples, ctx_embeddings, ctx_norms, word_pos_ctx_gradients,
         word_neg_ctx_gradients, term_pos_ctx_gradients, term_neg_ctx_gradients, ctx_reg_gradients,
         all_ctx_ixes, num_ctx, term_transform_weights, term_transform_gradients,
-        ctx_transform_weights, ctx_transform_gradients, global_term_compositionality_scores,
-        local_term_compositionality_scores, global_term_entity_likelihoods,
+        ctx_transform_weights, ctx_transform_gradients,global_term_entity_likelihoods,
         local_term_entity_likelihoods, wv, full_window_size, target, sub_window_skip,
         negative, max_num_entities, alpha, embedding_size, word_burn, burning_in, flags);
 
@@ -2277,7 +1977,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     // FreeAndNull checks for if NULL before freeing,
     // so can safely call on everything here
     FreeAndNull((void *)&local_term_latency_scores);
-    FreeAndNull((void *)&local_term_compositionality_scores);
     FreeAndNull((void *)&local_term_entity_likelihoods);
 
     FreeAndNull((void *)&word_gradient);

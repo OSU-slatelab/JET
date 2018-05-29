@@ -4,7 +4,6 @@
 typedef float real;                    // Precision of float numbers
 
 struct model_flags {
-    bool disable_compositionality;
     bool disable_likelihoods;
     bool disable_term_similarity;
     bool disable_latency;
@@ -46,7 +45,6 @@ struct hyperparameters {
     char *term_vectors_file;
     char *entity_vectors_file;
     char *context_vectors_file;
-    char *term_compositionality_file;
     char *term_entity_likelihood_file;
     char *interpolation_weights_file;
 };
@@ -59,14 +57,14 @@ void DestroyModelFlags(struct model_flags **flags);
 void InitializeModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
         real **ctx_norms, real **term_transform_weights, real **ctx_transform_weights,
-        real **global_term_compositionality_scores, real **global_term_entity_likelihoods,
+        real **global_term_entity_likelihoods,
         struct vocabulary *wv, struct vocabulary *tv, struct vocabulary *ev, struct entity_map *em,
         long long embedding_size, int **unitable, real **word_downsampling_table,
         real **term_downsampling_table, real downsampling_rate);
 void DestroyModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
         real **ctx_norms, real **term_transform_weights, real **ctx_transform_weights,
-        real **global_term_compositionality_scores, real **global_term_entity_likelihoods,
+        real **global_term_entity_likelihoods,
         int **unitable, real **word_downsampling_table, real **term_downsampling_table);
 
 void LearningStep(int *masked_word_context_window, int target, int full_window_size,
@@ -76,7 +74,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         struct term_monogamy_map *monomap,
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
-        int *entity_update_counters, int *ctx_update_counters, real *global_term_compositionality_scores,
+        int *entity_update_counters, int *ctx_update_counters,
         real *global_term_entity_likelihoods, real *term_transform_weights, real *ctx_transform_weights,
         real alpha, long long embedding_size, int negative, real lambda, bool word_burn, bool burning_in,
         struct model_flags *flags);
@@ -107,12 +105,6 @@ void CalculateLocalTermLatencyScores(struct term_annotation **completed_term_buf
         int *entities_per_term, real *entity_embeddings, real *entity_norms,
         int *entity_ixes, real *averaged_ctx_embeddings, long long embedding_size,
         real *local_term_latency_scores);
-/*
-void CalculateLocalTermCompositionalityScores(struct term_annotation **completed_term_buffer,
-        int num_completed_terms, int *sampled_completed_term_ixes, long long embedding_size,
-        real *term_embeddings, real *term_norms, real *word_embeddings,
-        real *local_term_compositionality_scores);
-*/
 void CalculateLocalTermEntityLikelihoods(struct term_annotation **completed_term_buffer,
         int num_completed_terms, int *sampled_completed_term_ixes, int max_num_entities,
         int *entities_per_term, real *global_term_entity_likelihoods, real *entity_embeddings,

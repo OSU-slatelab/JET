@@ -109,24 +109,6 @@ void LoadVectors(char *fpath, real *embeddings, struct vocabulary *vocab, long l
 }
 
 /**
- * Write compositionality scores to a file, formatted as
- *  <Embedded term> \t <score>
- */
-void WriteCompositionalityScores(char *f, struct vocabulary *tv, real *term_compositionality_scores) {
-    FILE *fo = fopen(f, "wb");
-    // error check
-    if (fo == NULL) {
-        error("Unable to write compositionality scores to file %s, check if the directory exists\n", f);
-        exit(1);
-    }
-    // write each term and its compositionality score
-    for (int i = 0; i < tv->vocab_size; i++) {
-        fprintf(fo, "%s\t%f\n", tv->vocab[i].word, term_compositionality_scores[i]);
-    }
-    fclose(fo);
-}
-
-/**
  * Write term->entity likelihoods to a file, formatted as
  *  <Term> \t <Entity> \t <Likelihood>
  */
@@ -225,8 +207,6 @@ void WriteHyperparameters(char *f, struct hyperparameters params) {
     if (params.flags->disable_terms) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Entity learning: ");
     if (params.flags->disable_entities) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
-    fprintf(fo, "\n  Term compositionality: ");
-    if (params.flags->disable_compositionality) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Term-entity likelihoods: ");
     if (params.flags->disable_likelihoods) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Term-entity similarity: ");
@@ -257,7 +237,6 @@ void WriteHyperparameters(char *f, struct hyperparameters params) {
     fprintf(fo, "  Term embeddings file: %s\n", params.term_vectors_file);
     fprintf(fo, "  Entity embeddings file: %s\n", params.entity_vectors_file);
     fprintf(fo, "  Context embeddings file: %s\n", params.context_vectors_file);
-    fprintf(fo, "  Term compositionality file: %s\n", params.term_compositionality_file);
     fprintf(fo, "  Term-entity likelihoods file: %s\n", params.term_entity_likelihood_file);
     fprintf(fo, "  Interpolation weights file: %s\n", params.interpolation_weights_file);
 
