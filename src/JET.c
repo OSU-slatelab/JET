@@ -69,7 +69,6 @@ char wvocab_file[MAX_FILENAME_SIZE];
 char tvocab_file[MAX_FILENAME_SIZE];
 
 // other files
-char term_entity_likelihood_file[MAX_FILENAME_SIZE];
 char thread_config_file[MAX_FILENAME_SIZE];
 char map_file[MAX_FILENAME_SIZE];
 
@@ -98,7 +97,6 @@ long long alpha_schedule_interval = 10000;
 real lambda = 0.0;
 real *word_embeddings, *term_embeddings, *entity_embeddings, *ctx_embeddings;
 real *word_norms, *term_norms, *entity_norms, *ctx_norms;
-real *term_entity_likelihoods;
 int numiters = 5;
 int word_burn_iters = 0, burn_in_iters = 0;
 char *str_map_sep;
@@ -331,7 +329,6 @@ void *TrainModelThread(void *arguments) {
                     max_num_entities, word_embeddings, term_embeddings, entity_embeddings,
                     ctx_embeddings, word_norms, term_norms, entity_norms, ctx_norms,
                     entity_update_counters, ctx_update_counters,
-                    term_entity_likelihoods,
                     alpha, embedding_size, negative, lambda, word_burn, burning_in, flags);
             }
 
@@ -458,15 +455,6 @@ void SaveModel(bool for_iter, int iter) {
     info("   Saving entity embeddings to %s...", this_file);
     WriteVectors(this_file, ev, entity_embeddings, embedding_size, binary);
     info("Done.\n");
-
-    // save term-entity likelihoods
-    if (term_entity_likelihood_file[0] != 0) {
-        if (for_iter) sprintf(this_file, "%s.iter%d", term_entity_likelihood_file, iter);
-        else strcpy(this_file, term_entity_likelihood_file);
-        info("   Saving term-entity likelihoods to %s...", this_file);
-        WriteTermEntityLikelihoods(this_file, tv, termmap, term_entity_likelihoods);
-        info("Done.\n");
-    }
 }
 
 /**
@@ -827,7 +815,6 @@ void parse_args(int argc, char **argv) {
     term_vectors_file[0] = 0;
     thread_config_file[0] = 0;
     term_strmap_file[0] = 0;
-    term_entity_likelihood_file[0] = 0;
     param_file[0] = 0;
 
     if ((i = ArgPos((char *)"-help", argc, argv)) > 0) help = 1;
@@ -850,7 +837,6 @@ void parse_args(int argc, char **argv) {
     if ((i = ArgPos((char *)"-save-word-vectors", argc, argv)) > 0) strcpy(word_vectors_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-save-context-vectors", argc, argv)) > 0) strcpy(context_vectors_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-save-term-vectors", argc, argv)) > 0) strcpy(term_vectors_file, argv[i + 1]);
-    if ((i = ArgPos((char *)"-save-entity-likelihoods", argc, argv)) > 0) strcpy(term_entity_likelihood_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-save-settings", argc, argv)) > 0) strcpy(param_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-iters", argc, argv)) > 0) numiters = atoi(argv[i+1]);
     if ((i = ArgPos((char *)"-burn-in-iters", argc, argv)) > 0) burn_in_iters = atoi(argv[i+1]);
@@ -861,7 +847,6 @@ void parse_args(int argc, char **argv) {
     if ((i = ArgPos((char *)"-lambda", argc, argv)) > 0) lambda = atof(argv[i + 1]);
     // debug options
     if ((i = ArgPos((char *)"-random-seed", argc, argv)) > 0) random_seed = atol(argv[i + 1]);
-    if ((i = FlagPos((char *)"-disable-likelihoods", argc, argv)) > 0) flags->disable_likelihoods = true;
     if ((i = FlagPos((char *)"-disable-words", argc, argv)) > 0) flags->disable_words = true;
     if ((i = FlagPos((char *)"-disable-terms", argc, argv)) > 0) flags->disable_terms = true;
     if ((i = FlagPos((char *)"-disable-entities", argc, argv)) > 0) flags->disable_entities = true;
@@ -873,14 +858,8 @@ void parse_args(int argc, char **argv) {
         strcpy(str_map_sep, ",");
     }
 
-    // handle component disabling overrides
-    if (flags->disable_terms || flags->disable_entities) {
-        flags->disable_likelihoods = true;
-    }
-
     // override everything
     lambda = 0;
-    flags->disable_likelihoods = true;
 
     // disable regularization if lambda is 0
     if (lambda == 0) flags->disable_regularization = true;
@@ -965,14 +944,11 @@ int main(int argc, char **argv) {
     if (!verify_args()) { return 0; }
 
     // give notice of any disabled model components
-    if (flags->disable_likelihoods 
-            || flags->disable_regularization
+    if (flags->disable_regularization
             || flags->disable_words
             || flags->disable_terms
             || flags->disable_entities) {
         info("=== Model overrides ===\n");
-        if (flags->disable_likelihoods)
-            info("  Term-entity likelihood learning: DISABLED\n");
         if (flags->disable_regularization)
             info("  Regularization: DISABLED\n");
         if (flags->disable_words)
@@ -1015,7 +991,6 @@ int main(int argc, char **argv) {
     params.term_vectors_file = term_vectors_file;
     params.entity_vectors_file = entity_vectors_file;
     params.context_vectors_file = context_vectors_file;
-    params.term_entity_likelihood_file = term_entity_likelihood_file;
     // TODO: make this required
     if (param_file[0] != 0) {
         WriteHyperparameters(param_file, params);
@@ -1056,7 +1031,7 @@ int main(int argc, char **argv) {
 
     info("\nInitializing model...\n");
     InitializeModel(&word_embeddings, &term_embeddings, &entity_embeddings, &ctx_embeddings,
-        &word_norms, &term_norms, &entity_norms, &ctx_norms, &term_entity_likelihoods,
+        &word_norms, &term_norms, &entity_norms, &ctx_norms,
         wv, tv, ev, termmap, embedding_size, &unitable, &word_downsampling_table,
         &term_downsampling_table, downsampling_rate);
 
@@ -1074,7 +1049,7 @@ int main(int argc, char **argv) {
     DestroyTermStringMap(&strmap);
     DestroyMonogamyMap(&monomap);
     DestroyModel(&word_embeddings, &term_embeddings, &entity_embeddings, &ctx_embeddings,
-        &word_norms, &term_norms, &entity_norms, &ctx_norms, &term_entity_likelihoods,
+        &word_norms, &term_norms, &entity_norms, &ctx_norms,
         &unitable, &word_downsampling_table, &term_downsampling_table);
     DestroyThreadConfigurations(&thread_tokens, &thread_start_bytes_plain,
         &thread_start_bytes_annot, &thread_start_offsets_annot);

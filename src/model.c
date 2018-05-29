@@ -82,7 +82,6 @@ void InitModelFlags(struct model_flags **flags) {
         error("   >>> Failed to initialize model flags; Aborting\n");
         exit(1);
     }
-    (*flags)->disable_likelihoods = false;
     (*flags)->disable_regularization = false;
 }
 /**
@@ -336,59 +335,15 @@ void DestroyDownsamplingTable(real **downsampling_table) {
 }
 
 /**
- * Initialize prior probability distribution over possible concepts for each term.
- * Term-entity likelihoods are aligned to vocabulary indices; each term is given
- * MaxNumEntities(em) slots for likelihoods.
- * 
- * For now, initializes to uniform distribution.
- * TODO: introduce ranking-based initialization
- */
-void InitTermEntityLikelihoods(real **global_term_entity_likelihoods, struct vocabulary *tv, 
-        struct entity_map *em) {
-    long i, j;
-    int map_ix, num_entities;
-
-    int max_num_entities = MaxNumEntities(em);
-    *global_term_entity_likelihoods = calloc(tv->vocab_size * max_num_entities, sizeof(real));
-    if (*global_term_entity_likelihoods == NULL) {
-        error("   >>> Failed to allocate memory for term->entity likelihoods; Aborting\n");
-        exit(1);
-    }
-    // for each term, initialize the prior distribution over its possible
-    // concepts to uniform
-    for (i = 0; i < tv->vocab_size; i++) {
-        map_ix = SearchMap(em, &tv->vocab[i]);
-        if (map_ix >= 0) {
-            num_entities = em->map[map_ix].num_entities;
-            for (j = 0; j < num_entities; j++) {
-                (*global_term_entity_likelihoods)[(i*max_num_entities)+j]
-                    = 1.0/num_entities;
-            }
-        }
-    }
-}
-/**
- * Destroy term->entity likelihoods
- */
-void DestroyTermEntityLikelihoods(real **global_term_entity_likelihoods) {
-    if (*global_term_entity_likelihoods != NULL) {
-        free(*global_term_entity_likelihoods);
-        *global_term_entity_likelihoods = NULL;
-    }
-}
-
-/**
  * Wrapper for all model initialization steps
  */
 void InitializeModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
         real **ctx_norms,
-        real **global_term_entity_likelihoods,
         struct vocabulary *wv, struct vocabulary *tv, struct vocabulary *ev, struct entity_map *em,
         long long embedding_size, int **unitable, real **word_downsampling_table,
         real **term_downsampling_table, real downsampling_rate) {
     InitExpTable();
-    InitTermEntityLikelihoods(global_term_entity_likelihoods, tv, em);
     InitNet(word_embeddings, term_embeddings, entity_embeddings, ctx_embeddings,
         word_norms, term_norms, entity_norms, ctx_norms, wv, tv, ev, embedding_size);
     InitUnigramTable(unitable, wv);
@@ -401,10 +356,8 @@ void InitializeModel(real **word_embeddings, real **term_embeddings, real **enti
 void DestroyModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
         real **ctx_norms,
-        real **global_term_entity_likelihoods,
         int **unitable, real **word_downsampling_table, real **term_downsampling_table) {
     DestroyExpTable();
-    DestroyTermEntityLikelihoods(global_term_entity_likelihoods);
     DestroyNet(word_embeddings, term_embeddings, entity_embeddings, ctx_embeddings,
                word_norms, term_norms, entity_norms, ctx_norms);
     DestroyUnigramTable(unitable);
@@ -607,89 +560,6 @@ void TrackContextIndices(int *masked_word_context_window, int word_ix,
     }
 }
 
-
-
-/**
- * Given a set of term mentions with individual context windows,
- * calculate a context-sensitive probability distribution over the
- * entities each term can represent.
- *
- * This distribution also takes into account the current
- * context-independent term-entity likelihoods.
- *
- * For term t, representing entities E, * let pr(e \in E |t)
- * be the context-independent prior of e given * t.  Then, with
- * context window C, posteriors are calculated as:
- *
- *   score(e \in E, t, C) <- pr(e|t) * ( [\sum_{c \in C} e . c] / norm(c) )
- *   Z <- (1/|E|) * \sum_{e \in E} score(e, C)
- *
- *   P(e \in E | t, C) <- score(e,t,C) / Z
- */
-void CalculateLocalTermEntityLikelihoods(struct term_annotation **completed_term_buffer,
-        int num_completed_terms, int *sampled_completed_term_ixes, int max_num_entities,
-        int *entities_per_term, real *global_term_entity_likelihoods, real *entity_embeddings,
-        real *entity_norms, int *entity_ixes, long long *entity_offsets,
-        real *entity_pos_ctx_dots, real *ctx_norms, int full_window_size, int target,
-        long long embedding_size, real *local_term_entity_likelihoods) {
-    int i, j, term_ix, window_ix, ctx_ix;
-    long long term_entity_block_start, term_entity_likelihood_start, entity_block_start;
-    real cos_sim, normalization_term;
-
-    // zero it out first
-    for (i = 0; i < num_completed_terms * max_num_entities; i++)
-        local_term_entity_likelihoods[i] = 0;
-
-    for (i = 0; i < num_completed_terms; i++) {
-        term_ix = sampled_completed_term_ixes[i];
-        if (term_ix >= 0) {
-            term_entity_block_start = i * max_num_entities;
-            term_entity_likelihood_start = term_ix * max_num_entities;
-
-            // for each entity, do the following steps
-            for (j = 0; j < entities_per_term[i]; j++) {
-                if (entity_ixes[term_entity_block_start + j] >= 0) {
-                    entity_block_start = (term_entity_block_start + j) * full_window_size;
-
-                    // (1) sum the shifted cosine similarities of each entity with every context word
-                    for (window_ix = 0; window_ix < full_window_size; window_ix++) {
-                        // ignore the target position
-                        if (window_ix == target) continue;
-                        // also, if the context word is unknown, ignore it
-                        ctx_ix = completed_term_buffer[i]->contexts[window_ix];
-                        if (ctx_ix < 0) continue;
-                        // otherwise, use the pre-calculated dot products to get
-                        // the cosine similarity
-                        cos_sim = CosineSimilarityFromDot(
-                            entity_pos_ctx_dots[entity_block_start + window_ix],
-                            entity_norms[entity_ixes[term_entity_block_start + j]],
-                            ctx_norms[ctx_ix]
-                        );
-                        // add 1 to force into non-negative space (for softmax calculation)
-                        local_term_entity_likelihoods[term_entity_block_start + j] +=
-                            (1 + cos_sim);
-                    }
-
-                    // (2) apply context-independent priors
-                    local_term_entity_likelihoods[term_entity_block_start + j] *=
-                        global_term_entity_likelihoods[term_entity_likelihood_start + j];
-                }
-            }
-
-            // finally, take a softmax over the entities
-            normalization_term = 0;
-            for (j = 0; j < entities_per_term[i]; j++)
-                normalization_term += local_term_entity_likelihoods[term_entity_block_start + j];
-            for (j = 0; j < entities_per_term[i]; j++) {
-                if (normalization_term > 0)
-                    local_term_entity_likelihoods[term_entity_block_start + j] /= normalization_term;
-                // default to uniform distribution if no local scores
-                else
-                    local_term_entity_likelihoods[term_entity_block_start + j] = 1.0/entities_per_term[i];
-            }
-        }
-    }
-}
 
 
 /**
@@ -905,7 +775,7 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
         real *ctx_norms, real *word_pos_ctx_gradients, real *word_neg_ctx_gradients,
         real *term_pos_ctx_gradients, real *term_neg_ctx_gradients,
         real *ctx_reg_gradients, int *all_ctx_ixes, int num_ctx,
-        real *global_term_entity_likelihoods, real *local_term_entity_likelihoods,
+        real *local_term_entity_likelihoods,
         struct vocabulary *wv, int full_window_size, int target,
         int sub_window_skip, int negative, int max_num_entities, real alpha,
         long long embedding_size, bool word_burn, bool burning_in, struct model_flags *flags) {
@@ -1066,33 +936,6 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
             */
         }
     }
-
-    if (!word_burn) {
-        // apply updates to context-independent (global) term->entity likelihoods
-        // update via interpolation:
-        //  global_posterior(x) <- (1-alpha)global_prior(x) + (alpha)local_posterior(x)
-        if (!burning_in && !flags->disable_likelihoods) {
-            for (i = 0; i < num_completed_terms; i++) {
-                if (term_ixes[i] >= 0) {
-                    term_entity_block_start = i * max_num_entities;
-                    for (j = 0; j < entities_per_term[i]; j++) {
-                        if (entity_ixes[term_entity_block_start + j] >= 0) {
-                            global_term_entity_likelihoods[(term_ixes[i] * max_num_entities) + j] = (
-                                (
-                                    (1 - alpha) *
-                                    global_term_entity_likelihoods[(term_ixes[i] * max_num_entities) + j]
-                                ) + 
-                                (
-                                    alpha *
-                                    local_term_entity_likelihoods[term_entity_block_start + j]
-                                )
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 
@@ -1113,7 +956,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,
-        real *global_term_entity_likelihoods,
         real alpha, long long embedding_size, int negative, real lambda, bool word_burn, bool burning_in,
         struct model_flags *flags) {
 
@@ -1313,21 +1155,12 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     ////////////////////////////////////////////////////////////
 
     if (!word_burn && (!flags->disable_terms || !flags->disable_entities)) {
-        // CALCULATE ALL THE LOCAL SCORES!1!
-        if (!burning_in && !flags->disable_likelihoods) {
-            CalculateLocalTermEntityLikelihoods(completed_term_buffer,
-                num_completed_terms, sampled_completed_term_ixes, max_num_entities,
-                entities_per_term, global_term_entity_likelihoods, entity_embeddings, entity_norms,
-                entity_ixes, entity_offsets, entity_pos_ctx_dots, ctx_norms, full_window_size,
-                target, embedding_size, local_term_entity_likelihoods);
-        } else {
-            for (i = 0; i < num_completed_terms; i++) {
-                term_entity_block_start = i * max_num_entities;
-                for (j = 0; j < entities_per_term[i]; j++)
-                    local_term_entity_likelihoods[term_entity_block_start + j] = 1/(real)entities_per_term[i];
-                for (j = entities_per_term[i]; j < max_num_entities; j++)
-                    local_term_entity_likelihoods[term_entity_block_start + j] = 0;
-            }
+        for (i = 0; i < num_completed_terms; i++) {
+            term_entity_block_start = i * max_num_entities;
+            for (j = 0; j < entities_per_term[i]; j++)
+                local_term_entity_likelihoods[term_entity_block_start + j] = 1/(real)entities_per_term[i];
+            for (j = entities_per_term[i]; j < max_num_entities; j++)
+                local_term_entity_likelihoods[term_entity_block_start + j] = 0;
         }
     }
 
@@ -1544,9 +1377,9 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         masked_word_context_window, word_negative_samples, completed_term_buffer,
         term_negative_samples, ctx_embeddings, ctx_norms, word_pos_ctx_gradients,
         word_neg_ctx_gradients, term_pos_ctx_gradients, term_neg_ctx_gradients, ctx_reg_gradients,
-        all_ctx_ixes, num_ctx, global_term_entity_likelihoods,
-        local_term_entity_likelihoods, wv, full_window_size, target, sub_window_skip,
-        negative, max_num_entities, alpha, embedding_size, word_burn, burning_in, flags);
+        all_ctx_ixes, num_ctx, local_term_entity_likelihoods, wv, full_window_size, target,
+        sub_window_skip, negative, max_num_entities, alpha, embedding_size, word_burn,
+        burning_in, flags);
 
 
     /////////////////////////////

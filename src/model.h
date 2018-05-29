@@ -4,7 +4,6 @@
 typedef float real;                    // Precision of float numbers
 
 struct model_flags {
-    bool disable_likelihoods;
     bool disable_term_similarity;
     bool disable_regularization;
     bool disable_words;
@@ -56,14 +55,12 @@ void DestroyModelFlags(struct model_flags **flags);
 void InitializeModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
         real **ctx_norms,
-        real **global_term_entity_likelihoods,
         struct vocabulary *wv, struct vocabulary *tv, struct vocabulary *ev, struct entity_map *em,
         long long embedding_size, int **unitable, real **word_downsampling_table,
         real **term_downsampling_table, real downsampling_rate);
 void DestroyModel(real **word_embeddings, real **term_embeddings, real **entity_embeddings,
         real **ctx_embeddings, real **word_norms, real **term_norms, real **entity_norms,
         real **ctx_norms,
-        real **global_term_entity_likelihoods,
         int **unitable, real **word_downsampling_table, real **term_downsampling_table);
 
 void LearningStep(int *masked_word_context_window, int target, int full_window_size,
@@ -74,7 +71,6 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,
-        real *global_term_entity_likelihoods,
         real alpha, long long embedding_size, int negative, real lambda, bool word_burn, bool burning_in,
         struct model_flags *flags);
 
@@ -99,12 +95,6 @@ void CalculateAverageContextEmbeddings(struct term_annotation **completed_term_b
         int num_completed_terms, int *sampled_completed_term_ixes, real *ctx_embeddings,
         long long embedding_size, int window_start, int window_end, int target,
         real *averaged_ctx_embeddings);
-void CalculateLocalTermEntityLikelihoods(struct term_annotation **completed_term_buffer,
-        int num_completed_terms, int *sampled_completed_term_ixes, int max_num_entities,
-        int *entities_per_term, real *global_term_entity_likelihoods, real *entity_embeddings,
-        real *entity_norms, int *entity_ixes, long long *entity_offsets,
-        real *entity_pos_ctx_dots, real *ctx_norms, int full_window_size, int target,
-        long long embedding_size, real *local_term_entity_likelihoods);
 void GetNegativeSamples(int negative, int *negative_samples, int ns_start_ix, int *pos_ctx_ixes,
         int window_start, int window_end, int target, int *unitable);
 void AddContextBasedGradients(real *embeddings, long long trg_offset,

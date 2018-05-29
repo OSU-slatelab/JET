@@ -108,38 +108,6 @@ void LoadVectors(char *fpath, real *embeddings, struct vocabulary *vocab, long l
     fclose(f);
 }
 
-/**
- * Write term->entity likelihoods to a file, formatted as
- *  <Term> \t <Entity> \t <Likelihood>
- */
-void WriteTermEntityLikelihoods(char *f, struct vocabulary *tv, struct entity_map *em,
-        real *term_entity_likelihoods) {
-    long i, j;
-    int map_ix;
-
-    int max_num_entities = MaxNumEntities(em);
-
-    FILE *fo = fopen(f, "wb");
-    // error check
-    if (fo == NULL) {
-        error("Unable to write term-entity likelihoods to file %s, check if the directory exists\n", f);
-        exit(1);
-    }
-    // for each term, write the term and the distribution over its entities
-    for (i = 0; i < tv->vocab_size; i++) {
-        map_ix = SearchMap(em, &tv->vocab[i]);
-        if (map_ix >= 0) {
-            for (j = 0; j < em->map[map_ix].num_entities; j++) {
-                fprintf(fo, "%s\t%s\t%f\n",
-                    tv->vocab[i].word,
-                    em->map[map_ix].entities[j].string,
-                    term_entity_likelihoods[(i * max_num_entities) + j]);
-            }
-        }
-    }
-
-    fclose(fo);
-}
 
 /**
  * Write hyperparameters and all other training settings to file,
@@ -185,8 +153,6 @@ void WriteHyperparameters(char *f, struct hyperparameters params) {
     if (params.flags->disable_terms) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Entity learning: ");
     if (params.flags->disable_entities) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
-    fprintf(fo, "\n  Term-entity likelihoods: ");
-    if (params.flags->disable_likelihoods) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n  Regularization: ");
     if (params.flags->disable_regularization) fprintf(fo, "DISABLED"); else fprintf(fo, "ENABLED");
     fprintf(fo, "\n");
@@ -211,7 +177,6 @@ void WriteHyperparameters(char *f, struct hyperparameters params) {
     fprintf(fo, "  Term embeddings file: %s\n", params.term_vectors_file);
     fprintf(fo, "  Entity embeddings file: %s\n", params.entity_vectors_file);
     fprintf(fo, "  Context embeddings file: %s\n", params.context_vectors_file);
-    fprintf(fo, "  Term-entity likelihoods file: %s\n", params.term_entity_likelihood_file);
 
     fclose(fo);
 }
