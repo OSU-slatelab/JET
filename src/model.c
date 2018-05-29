@@ -756,7 +756,7 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
         real *local_term_entity_likelihoods,
         struct vocabulary *wv, int full_window_size, int target,
         int sub_window_skip, int negative, int max_num_entities, real alpha,
-        long long embedding_size, bool word_burn, struct model_flags *flags) {
+        long long embedding_size, struct model_flags *flags) {
 
     long long c;
     int ctx_ix;
@@ -780,46 +780,43 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
         */
     }
 
-    if (!word_burn) {
+    // apply term embedding gradients
+    if (!flags->disable_terms) {
+        for (i = 0; i < num_completed_terms; i++) {
+            if (term_ixes[i] >= 0) {
+                term_gradient_offset = i * embedding_size;
 
-        // apply term embedding gradients
-        if (!flags->disable_terms) {
-            for (i = 0; i < num_completed_terms; i++) {
-                if (term_ixes[i] >= 0) {
-                    term_gradient_offset = i * embedding_size;
-
-                    for (c = 0; c < embedding_size; c++)
-                        term_embeddings[term_offsets[i] + c] += (term_gradients[term_gradient_offset + c] * alpha);
-                    term_norms[term_ixes[i]] = Norm(term_embeddings, term_offsets[i], embedding_size);
-                    if (term_norms[term_ixes[i]] >= NORM_LIMIT) {
-                        error("   TERM NORM BROKE FIRST: %f\n", term_norms[term_ixes[i]]);
-                        exit(1);
-                    }
+                for (c = 0; c < embedding_size; c++)
+                    term_embeddings[term_offsets[i] + c] += (term_gradients[term_gradient_offset + c] * alpha);
+                term_norms[term_ixes[i]] = Norm(term_embeddings, term_offsets[i], embedding_size);
+                if (term_norms[term_ixes[i]] >= NORM_LIMIT) {
+                    error("   TERM NORM BROKE FIRST: %f\n", term_norms[term_ixes[i]]);
+                    exit(1);
                 }
             }
         }
+    }
 
-        // apply entity embedding gradients
-        if (!flags->disable_entities) {
-            for (i = 0; i < num_completed_terms; i++) {
-                if (term_ixes[i] >= 0) {
-                    term_entity_block_start = i * max_num_entities;
+    // apply entity embedding gradients
+    if (!flags->disable_entities) {
+        for (i = 0; i < num_completed_terms; i++) {
+            if (term_ixes[i] >= 0) {
+                term_entity_block_start = i * max_num_entities;
 
-                    for (j = 0; j < entities_per_term[i]; j++) {
-                        if (entity_ixes[term_entity_block_start +j] >= 0) {
-                            entity_gradient_offset = (term_entity_block_start + j) * embedding_size;
-                            for (c = 0; c < embedding_size; c++)
-                                entity_embeddings[entity_offsets[term_entity_block_start + j] + c] +=
-                                    (entity_gradients[entity_gradient_offset + c] * alpha);
-                            entity_norms[entity_ixes[term_entity_block_start + j]] =
-                                Norm(entity_embeddings, entity_offsets[term_entity_block_start + j], embedding_size);
-                            /*
-                            if (entity_norms[entity_ixes[term_entity_block_start + j]] >= NORM_LIMIT) {
-                                error("   ENTITY NORM BROKE FIRST: %f\n", entity_norms[entity_ixes[term_entity_block_start + j]]);
-                                exit(1);
-                            }
-                            */
+                for (j = 0; j < entities_per_term[i]; j++) {
+                    if (entity_ixes[term_entity_block_start +j] >= 0) {
+                        entity_gradient_offset = (term_entity_block_start + j) * embedding_size;
+                        for (c = 0; c < embedding_size; c++)
+                            entity_embeddings[entity_offsets[term_entity_block_start + j] + c] +=
+                                (entity_gradients[entity_gradient_offset + c] * alpha);
+                        entity_norms[entity_ixes[term_entity_block_start + j]] =
+                            Norm(entity_embeddings, entity_offsets[term_entity_block_start + j], embedding_size);
+                        /*
+                        if (entity_norms[entity_ixes[term_entity_block_start + j]] >= NORM_LIMIT) {
+                            error("   ENTITY NORM BROKE FIRST: %f\n", entity_norms[entity_ixes[term_entity_block_start + j]]);
+                            exit(1);
                         }
+                        */
                     }
                 }
             }
@@ -856,7 +853,7 @@ void GradientAscent(int word_ix, long long word_offset, real *word_embeddings,
             }
         }
 
-        if (!word_burn && (!flags->disable_terms || !flags->disable_entities)) {
+        if (!flags->disable_terms || !flags->disable_entities) {
             // apply gradients from terms and entities
             for (i = 0; i < num_completed_terms; i++) {
                 // make sure it's a valid term
@@ -914,8 +911,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,
-        real alpha, long long embedding_size, int negative, bool word_burn,
-        struct model_flags *flags) {
+        real alpha, long long embedding_size, int negative, struct model_flags *flags) {
 
     int i, j, k, l, ctr, ix;
     int term_map_ix, num_entities;
@@ -1058,7 +1054,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
             embedding_size, word_pos_ctx_dots, 0, word_neg_ctx_dots, 0);
     }
     // terms
-    if (!word_burn && (!flags->disable_terms || !flags->disable_entities)) {
+    if (!flags->disable_terms || !flags->disable_entities) {
         for (i = 0; i < num_completed_terms; i++) {
             if (term_ixes[i] >= 0) {
                 term_block_start = i * full_window_size;
@@ -1112,7 +1108,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
     // Calculate all other multi-use info
     ////////////////////////////////////////////////////////////
 
-    if (!word_burn && (!flags->disable_terms || !flags->disable_entities)) {
+    if (!flags->disable_terms || !flags->disable_entities) {
         for (i = 0; i < num_completed_terms; i++) {
             term_entity_block_start = i * max_num_entities;
             for (j = 0; j < entities_per_term[i]; j++)
@@ -1171,7 +1167,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         #endif
     }
 
-    if (!word_burn && (!flags->disable_terms || !flags->disable_entities)) {
+    if (!flags->disable_terms || !flags->disable_entities) {
         // (2-3) Term/entity gradients
         for (i = 0; i < num_completed_terms; i++) {
             if (term_ixes[i] >= 0) {
@@ -1247,8 +1243,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         term_negative_samples, ctx_embeddings, ctx_norms, word_pos_ctx_gradients,
         word_neg_ctx_gradients, term_pos_ctx_gradients, term_neg_ctx_gradients, ctx_reg_gradients,
         all_ctx_ixes, num_ctx, local_term_entity_likelihoods, wv, full_window_size, target,
-        sub_window_skip, negative, max_num_entities, alpha, embedding_size, word_burn,
-        flags);
+        sub_window_skip, negative, max_num_entities, alpha, embedding_size, flags);
 
 
     /////////////////////////////

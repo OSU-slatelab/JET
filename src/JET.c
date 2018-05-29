@@ -49,7 +49,6 @@
 #include "model.h"
 #include "model_io.h"
 #include "context_manager.h"
-#include "pre_init.h"
 
 #define MIN_QUEUE_SIZE 1000
 #define MIN_QUEUE_WINDOWS 10
@@ -97,7 +96,6 @@ long long alpha_schedule_interval = 10000;
 real *word_embeddings, *term_embeddings, *entity_embeddings, *ctx_embeddings;
 real *word_norms, *term_norms, *entity_norms, *ctx_norms;
 int numiters = 5;
-int word_burn_iters = 0;
 char *str_map_sep;
 
 // pre-initialization
@@ -204,7 +202,6 @@ void *TrainModelThread(void *arguments) {
     long long corpus_token_count = wv->word_count;
     long long thread_word_count, last_report_word_count, last_alpha_word_count;
     bool halting;
-    bool word_burn = false;
 
 
     // open up files
@@ -225,10 +222,6 @@ void *TrainModelThread(void *arguments) {
         while (thread_pause_flags[thread_args->thread_id] == 1) {
             sleep(1);
         }
-
-        // check if we're still in the burn-in iterations
-        if (iter < word_burn_iters) word_burn = true;
-        else word_burn = false;
         
         // start bytes are pre-calculated to put us at the (aligned) start of a word,
         // and not in the middle of a multi-word term
@@ -326,7 +319,7 @@ void *TrainModelThread(void *arguments) {
                     max_num_entities, word_embeddings, term_embeddings, entity_embeddings,
                     ctx_embeddings, word_norms, term_norms, entity_norms, ctx_norms,
                     entity_update_counters, ctx_update_counters,
-                    alpha, embedding_size, negative, word_burn, flags);
+                    alpha, embedding_size, negative, flags);
             }
 
 
@@ -462,7 +455,6 @@ void *TrackProgress(void *a) {
     int current_iteration = 0;
     int completed_threads, i;
     bool starting_training = true, changing_iteration = false, finishing_training = false;
-    bool initialized_terms = false;
 
     time_t now, iter_start = time(NULL);
     int num_ticks, prog_bar_size = 30;
@@ -534,13 +526,6 @@ void *TrackProgress(void *a) {
 
             info("\n\nIteration %d/%d\n", current_iteration, numiters);
             iter_start = time(NULL);
-
-            if (current_iteration > word_burn_iters && word_burn_iters > 0 && !initialized_terms) {
-                info("  Initializing terms ... \n");
-                InitTermsFromWords(term_embeddings, tv, word_embeddings, wv,
-                    strmap, monomap, embedding_size);
-                initialized_terms = true;
-            }
 
             // flag that every thread is good to go again
             for (i = 0; i < num_threads; i++)
@@ -750,8 +735,6 @@ void usage() {
     printf("\t\tSet the scheduling interval for decreasing the learning rate; 0 for no scheduling, default is 10,000 words\n");
     printf("\t-iters <int>\n");
     printf("\t\tPerform i iterations over the data; default is %d\n", numiters);
-    printf("\t-word-burn-iters <int>\n");
-    printf("\t\tOnly update words for the first <num> iterations; default is %d\n", word_burn_iters);
     printf("\t-binary <int>\n");
     printf("\t\tSave the resulting vectors in binary moded; default is 0 (off)\n");
     printf("\t-save-each <int>\n");
@@ -830,7 +813,6 @@ void parse_args(int argc, char **argv) {
     if ((i = ArgPos((char *)"-save-term-vectors", argc, argv)) > 0) strcpy(term_vectors_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-save-settings", argc, argv)) > 0) strcpy(param_file, argv[i + 1]);
     if ((i = ArgPos((char *)"-iters", argc, argv)) > 0) numiters = atoi(argv[i+1]);
-    if ((i = ArgPos((char *)"-word-burn-iters", argc, argv)) > 0) word_burn_iters = atoi(argv[i+1]);
     if ((i = ArgPos((char *)"-save-each", argc, argv)) > 0) save_each_iter = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window_size = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-stringmap", argc, argv)) > 0) strcpy(term_strmap_file, argv[i + 1]);
@@ -855,12 +837,6 @@ int verify_args() {
     if (entity_vectors_file[0] == 0) { printf("must supply -output.\n\n"); return 0; }
     if (map_file[0] == 0) { printf("must supply -term-map.\n\n"); return 0; }
 
-    // burn-in check
-    if (word_burn_iters >= numiters) {
-        printf("-word-burn-iters must be less than -iters.\n\n");
-        return 0;
-    }
-
     // validate hyperparameters
     if (window_size <= 0) {
         printf("-window-size must be greater than 0.\n\n");
@@ -884,10 +860,6 @@ int verify_args() {
     }
     if (numiters <= 0) {
         printf("-iters must be greater than 0.\n\n");
-        return 0;
-    }
-    if (word_burn_iters < 0) {
-        printf("-word-burn-iters must be 0 or greater.\n\n");
         return 0;
     }
 
@@ -937,7 +909,6 @@ int main(int argc, char **argv) {
     params.plaintext_corpus_file = plaintext_corpus_file;
     params.corpus_annotations_file = corpus_annotations_file;
     params.numiters = numiters;
-    params.word_burn_iters = word_burn_iters;
     params.window = window_size;
     params.min_count = min_count;
     params.embedding_size = embedding_size;

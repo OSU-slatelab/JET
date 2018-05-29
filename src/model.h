@@ -13,7 +13,6 @@ struct hyperparameters {
     char *plaintext_corpus_file;
     char *corpus_annotations_file;
     int numiters;
-    int word_burn_iters;
     int window;
     int min_count;
     long long embedding_size;
@@ -65,7 +64,7 @@ void LearningStep(int *masked_word_context_window, int target, int full_window_s
         int max_num_entities, real *word_embeddings, real *term_embeddings, real *entity_embeddings,
         real *ctx_embeddings, real *word_norms, real *term_norms, real *entity_norms, real *ctx_norms,
         int *entity_update_counters, int *ctx_update_counters,
-        real alpha, long long embedding_size, int negative, bool word_burn, struct model_flags *flags);
+        real alpha, long long embedding_size, int negative, struct model_flags *flags);
 
 /** Component methods (accessible for testing) **/
 real DotProduct(real *embeds_a, long long offset_a, real *embeds_b, long long offset_b,
