@@ -2,3 +2,5 @@
 .config.sh
 bin
 src/.nfs*
+__pycache__
+*.pyc
