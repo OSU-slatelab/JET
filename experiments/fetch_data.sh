@@ -21,8 +21,7 @@ UMLS_2017AB_PREFSTRS=../data/terminologies/UMLS_2017AB/UMLS_2017AB_preferred_str
 
 
 ## Baseline embedding files
-#BL_CHIU_2016=../data/embeddings/baselines/PubMed-shuffle-win-2.bin
-BL_CHIU_2016=/u/griffisd/cui2vec/data/embeddings/baselines/pyysalo/chiu-bionlp-2016/bio_nlp_vec/PubMed-shuffle-win-2.bin
+BL_CHIU_2016=../data/embeddings/baselines/PubMed-shuffle-win-2.bin
 BL_DEVINE_2014=../data/embeddings/baselines/DeVine_etal_2014.bin
 BL_MENCIA_2016=../data/embeddings/baselines/Mencia_etal_2016.bin
 BL_WIKI_MPME=../data/embeddings/wikipedia/MPME_baseline_bak.bin
@@ -61,24 +60,24 @@ if [ ! -e ${UMNSRS_REL} ]; then
 fi
 if [ ! -e "${UMNSRS_FILTER}" ]; then
     echo "Downloading UMNSRS filter set..."
-    curl -o ${UMNSRS_FILTER} http://slate.cse.ohio-state.edu/JET/data/UMNSRS_filtered_subset.skips
+    curl -k -o ${UMNSRS_FILTER} https://slate.cse.ohio-state.edu/JET/data/UMNSRS_filtered_subset.skips
 fi
 
 # Sim/Rel :: download WikiSRS
 if [ ! -e ${WIKISRS_SIM} ]; then
     echo "Downloading WikiSRS Similarity..."
-    curl -o ${WIKISRS_SIM} http://slate.cse.ohio-state.edu/WikiSRS/WikiSRS_similarity.csv
+    curl -k -o ${WIKISRS_SIM} https://slate.cse.ohio-state.edu/WikiSRS/WikiSRS_similarity.csv
 fi
 if [ ! -e ${WIKISRS_REL} ]; then
     echo "Downloading WikiSRS Relatedness..."
-    curl -o ${WIKISRS_REL} http://slate.cse.ohio-state.edu/WikiSRS/WikiSRS_relatedness.csv
+    curl -k -o ${WIKISRS_REL} https://slate.cse.ohio-state.edu/WikiSRS/WikiSRS_relatedness.csv
 fi
 
 # Analogy :: download BMASS
 if [ ! -e ${BMASS} ]; then
     echo "Need to download BMASS biomedical analogy set."
     echo "File can be downloaded from this page:"
-    echo "   http://slate.cse.ohio-state.edu/UTSAuthenticatedDownloader/index.html?dataset=BMASS"
+    echo "   https://slate.cse.ohio-state.edu/UTSAuthenticatedDownloader/index.html?dataset=BMASS"
     echo
     echo "Replication scripts only need the Multi-Answer file, and"
     echo "expect it to live in:"
@@ -89,7 +88,7 @@ fi
 # Analogy :: download Google analogies
 if [ ! -e ${GOOGLE} ]; then
     echo "Downloading Google analogy set..."
-    curl -o ${GOOGLE} http://slate.cse.ohio-state.edu/JET/data/questions-words.txt
+    curl -k -o ${GOOGLE} https://slate.cse.ohio-state.edu/JET/data/questions-words.txt
 fi
 
 # Entity-linking :: download AIDA mentions
@@ -106,7 +105,7 @@ if [ ! -e ${NLM_WSD} ] || [ ! -e ${NLM_WSD_DEFN} ]; then
 fi
 if [ ! -e ${AIDA} ]; then
     echo "Downloading AIDA mentions..."
-    curl -o ${AIDA} http://slate.cse.ohio-state.edu/JET/data/aida.mentions
+    curl -k -o ${AIDA} https://slate.cse.ohio-state.edu/JET/data/aida.mentions
 fi
 
 # All :: download baselines
@@ -122,14 +121,14 @@ if [ ! -e "${BL_CHIU_2016}" ]; then
 fi
 if [ ! -e "${BL_DEVINE_2014}" ]; then
     echo "Downloading UMLS CUI embeddings from DeVine et al. (2014)..."
-    curl -o ${BL_DEVINE_2014} http://slate.cse.ohio-state.edu/JET/data/DeVine_etal_2014.bin
+    curl -k -o ${BL_DEVINE_2014} https://slate.cse.ohio-state.edu/JET/data/DeVine_etal_2014.bin
 fi
 if [ ! -e "${BL_MENCIA_2016}" ]; then
     echo "Downloading MeSH header CUI embeddings from Mencia et al. (2016)..."
     echo "Original data, mapped to MeSH header IDs, hosted here:"
     echo "   http://www.ke.tu-darmstadt.de/resources/medsim"
     echo "Downloading version pre-mapped to UMLS CUIs..."
-    curl -o ${BL_MENCIA_2016} http://slate.cse.ohio-state.edu/JET/data/Mencia_etal_2016.bin
+    curl -k -o ${BL_MENCIA_2016} https://slate.cse.ohio-state.edu/JET/data/Mencia_etal_2016.bin
 fi
 if [ ! -e "${BL_WIKI_MPME}" ]; then
     echo "Whoops! Don't know how to get that one yet."
