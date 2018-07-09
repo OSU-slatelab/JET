@@ -11,6 +11,10 @@ WIKISRS_REL=../data/experiments/simrel/WikiSRS/WikiSRS_relatedness.csv
 BMASS=../data/experiments/analogy/BMASS/BMASS_multi_answer.txt
 GOOGLE=../data/experiments/analogy/Google/questions-words.txt
 
+NLM_WSD=../data/experiments/entitylinking/NLM-WSD/nlm_wsd.mentions
+NLM_WSD_DEFN=../data/experiments/entitylinking/NLM-WSD/entity_definitions.txt
+AIDA=../data/experiments/entitylinking/AIDA/aida.mentions
+
 
 ## Miscellaneous data files
 UMLS_2017AB_PREFSTRS=../data/terminologies/UMLS_2017AB/UMLS_2017AB_preferred_strings.tsv
@@ -37,6 +41,13 @@ if [ ! -d ../data/experiments/analogy/BMASS/results ]; then
 fi
 if [ ! -d ../data/experiments/analogy/Google/results ]; then
     mkdir -p ../data/experiments/analogy/Google/results
+fi
+# entity-linking results directories
+if [ ! -d ../data/experiments/entitylinking/AIDA/results ]; then
+    mkdir -p ../data/experiments/entitylinking/AIDA/results
+fi
+if [ ! -d ../data/experiments/entitylinking/NLM-WSD/results ]; then
+    mkdir -p ../data/experiments/entitylinking/NLM-WSD/results
 fi
 
 # Sim/Rel :: download UMNSRS
@@ -79,6 +90,23 @@ fi
 if [ ! -e ${GOOGLE} ]; then
     echo "Downloading Google analogy set..."
     curl -o ${GOOGLE} http://slate.cse.ohio-state.edu/JET/data/questions-words.txt
+fi
+
+# Entity-linking :: download AIDA mentions
+if [ ! -e ${NLM_WSD} ] || [ ! -e ${NLM_WSD_DEFN} ]; then
+    echo "Need to download pre-generated NLM-WSD mention and CUI definition data."
+    echo "File can be downloaded from link on this page:"
+    echo "   https://slate.cse.ohio-state.edu/UTSAuthenticatedDownloader/index.html?dataset=NLM_WSD_JET.zip"
+    echo
+    echo "Replication scripts expect the files to live in:"
+    echo "   ${NLM_WSD}"
+    echo "   ${NLM_WSD_DEFN}"
+    echo
+    read -p "Press [Enter] to continue" 
+fi
+if [ ! -e ${AIDA} ]; then
+    echo "Downloading AIDA mentions..."
+    curl -o ${AIDA} http://slate.cse.ohio-state.edu/JET/data/aida.mentions
 fi
 
 # All :: download baselines
