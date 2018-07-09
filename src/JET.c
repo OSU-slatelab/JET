@@ -719,15 +719,15 @@ void usage() {
     printf("\t\tSave vectors at each iteration; default is 0 (off)\n");
     printf("\t-word-vocab <file>\n");
     printf("\t\tFile to read word vocabulary from; if does not exist, word vocabulary will be learned and written to <file>\n");
-    printf("\t--term-vocab <file>\n");
+    printf("\t-term-vocab <file>\n");
     printf("\t\tFile to read term vocabulary from; if does not exist, term vocabulary will be learned and written to <file>\n");
     printf("\t-term-map filename\n");
     printf("\t\tfile mapping terms to entities\n");
     printf("\t-term-map-sep <char>\n");
     printf("\t\tcharacter separating entities in termmap file\n");
     printf("\t-initialize-from <file>\n");
-    printf("\t\tFile containing pre-trained word embeddings to initialize the model from (requires -stringmap)\n");
-    printf("\t-stringmap <file>\n");
+    printf("\t\tFile containing pre-trained word embeddings to initialize the model from (requires -string-map)\n");
+    printf("\t-string-map <file>\n");
     printf("\t\tFile mapping term IDs to the strings they represent (required if using -initialize-from)\n");
     printf("\nDEBUGGING OPTIONS\n");
     printf("\t-random-seed <seed>\n");
@@ -775,7 +775,7 @@ void parse_args(int argc, char **argv) {
     if ((i = ArgPos((char *)"-iters", argc, argv)) > 0) numiters = atoi(argv[i+1]);
     if ((i = ArgPos((char *)"-save-each", argc, argv)) > 0) save_each_iter = atoi(argv[i + 1]);
     if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window_size = atoi(argv[i + 1]);
-    if ((i = ArgPos((char *)"-stringmap", argc, argv)) > 0) strcpy(term_strmap_file, argv[i + 1]);
+    if ((i = ArgPos((char *)"-string-map", argc, argv)) > 0) strcpy(term_strmap_file, argv[i + 1]);
     // debug options
     if ((i = ArgPos((char *)"-random-seed", argc, argv)) > 0) random_seed = atol(argv[i + 1]);
     if ((i = FlagPos((char *)"-disable-words", argc, argv)) > 0) flags->disable_words = true;
