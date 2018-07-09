@@ -8,6 +8,13 @@ UMNSRS_FILTER=../data/experiments/simrel/UMNSRS/UMNSRS_filtered_subset.skips
 WIKISRS_SIM=../data/experiments/simrel/WikiSRS/WikiSRS_similarity.csv
 WIKISRS_REL=../data/experiments/simrel/WikiSRS/WikiSRS_relatedness.csv
 
+BMASS=../data/experiments/analogy/BMASS/BMASS_multi_answer.txt
+GOOGLE=../data/experiments/analogy/Google/questions-words.txt
+
+
+## Miscellaneous data files
+UMLS_2017AB_PREFSTRS=../data/terminologies/UMLS_2017AB/UMLS_2017AB_preferred_strings.tsv
+
 
 ## Baseline embedding files
 #BL_CHIU_2016=../data/embeddings/baselines/PubMed-shuffle-win-2.bin
@@ -23,6 +30,13 @@ if [ ! -d ../data/experiments/simrel/UMNSRS/results ]; then
 fi
 if [ ! -d ../data/experiments/simrel/WikiSRS/results ]; then
     mkdir -p ../data/experiments/simrel/WikiSRS/results
+fi
+# analogy results directories
+if [ ! -d ../data/experiments/analogy/BMASS/results ]; then
+    mkdir -p ../data/experiments/analogy/BMASS/results
+fi
+if [ ! -d ../data/experiments/analogy/Google/results ]; then
+    mkdir -p ../data/experiments/analogy/Google/results
 fi
 
 # Sim/Rel :: download UMNSRS
@@ -49,6 +63,24 @@ if [ ! -e ${WIKISRS_REL} ]; then
     curl -o ${WIKISRS_REL} http://slate.cse.ohio-state.edu/WikiSRS/WikiSRS_relatedness.csv
 fi
 
+# Analogy :: download BMASS
+if [ ! -e ${BMASS} ]; then
+    echo "Need to download BMASS biomedical analogy set."
+    echo "File can be downloaded from this page:"
+    echo "   http://slate.cse.ohio-state.edu/UTSAuthenticatedDownloader/index.html?dataset=BMASS"
+    echo
+    echo "Replication scripts only need the Multi-Answer file, and"
+    echo "expect it to live in:"
+    echo "   ${BMASS}"
+    echo
+    read -p "Press [Enter] to continue"
+fi
+# Analogy :: download Google analogies
+if [ ! -e ${GOOGLE} ]; then
+    echo "Downloading Google analogy set..."
+    curl -o ${GOOGLE} http://slate.cse.ohio-state.edu/JET/data/questions-words.txt
+fi
+
 # All :: download baselines
 if [ ! -e "${BL_CHIU_2016}" ]; then
     echo "Need to download PubMed embeddings from Chiu et al. (2016)."
@@ -73,4 +105,16 @@ if [ ! -e "${BL_MENCIA_2016}" ]; then
 fi
 if [ ! -e "${BL_WIKI_MPME}" ]; then
     echo "Whoops! Don't know how to get that one yet."
+fi
+
+# All :: download miscellaneous data
+if [ ! -e "${UMLS_2017AB_PREFSTRS}" ]; then
+    echo "Need to download preferred strings file for UMLS 2017AB."
+    echo "File can be downloaded from link on this page:"
+    echo "   https://slate.cse.ohio-state.edu/UTSAuthenticatedDownloader/index.html?dataset=UMLS_2017AB_preferred_strings"
+    echo
+    echo "Replication scripts expect file to live in:"
+    echo "   ${UMLS_2017AB_PREFSTRS}"
+    echo
+    read -p "Press [Enter] to continue" ignore
 fi
