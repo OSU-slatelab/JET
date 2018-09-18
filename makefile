@@ -1,4 +1,4 @@
-GCC=/opt/rh/devtoolset-4/root/usr/bin/gcc
+GCC=gcc
 CFLAGS=-I. -lm -Ofast -pthread -march=native -Wall -funroll-loops -Wno-unused-result
 SHELL=/bin/bash
 
@@ -13,9 +13,8 @@ bin/JET: src/JET.c src/thread_config.c src/vocab_learner.c src/vocab.c src/io.c 
 		-o bin/JET \
 		${CFLAGS}
 
-pubmed_tag:
+demo_annotation:
 	@set -e; \
-	source .config.sh; \
 	$${PY} -m tagcorpus \
 		--threads=3 \
 		data/corpus \
