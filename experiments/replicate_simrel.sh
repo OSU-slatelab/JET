@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PY=python3
-PYTHONPATH=$(pwd)/lib
+PYTHONPATH=$(pwd)/../dependencies
 
 source fetch_data.sh
 

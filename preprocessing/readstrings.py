@@ -10,11 +10,11 @@ Pickles n-gram map to file for use in corpus tagging.
 import os
 import sys
 import codecs
-from preprocessing.ngram import NGramMapper, NGramMapPrinter
 import nltk.corpus
-from denis.common import preprocessing as pre
-from denis.common import pickleio
-from denis.common.logging import log
+from preprocessing.ngram import NGramMapper, NGramMapPrinter
+from dependencies.drgriffis.common import preprocessing as pre
+from dependencies.drgriffis.common import pickleio
+from dependencies.drgriffis.common.logging import log
 
 def readStringsFile(stringf, remove_stopwords=False, use_collapsed_string=False):
     if remove_stopwords:
@@ -29,7 +29,7 @@ def readStringsFile(stringf, remove_stopwords=False, use_collapsed_string=False)
     mapper = NGramMapper()
 
     hook.readline() # ignore header line
-    log.track(message='  >> Processed {0} lines')
+    log.track(message='  >> Processed {0:,} lines', writeInterval=1000)
     for line in hook:
         (cui, string) = line.split('\t')
         string, cui = pre.tokenize(string), cui.strip().lower()

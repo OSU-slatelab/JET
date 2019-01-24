@@ -9,10 +9,10 @@ import operator
 import codecs
 import time
 import multiprocessing as mp
-import drgriffis.common.preprocessing as pre
-from drgriffis.common import pickleio
-from drgriffis.common import log
-from drgriffis.common import util
+import dependencies.drgriffis.common.preprocessing as pre
+from dependencies.drgriffis.common import pickleio
+from dependencies.drgriffis.common import log
+from dependencies.drgriffis.common import util
 
 class _SIGNALS:
     HALT = -1
@@ -161,7 +161,7 @@ def _writeAnnotations(outfile, annot_q):
     previous_start_ix = 0
     with codecs.open(outfile, 'w', 'utf-8') as stream:
         write_queue, write_ix, halting = {}, 0, False
-        log.track(message='  >> Processed {0} lines', writeInterval=10)
+        log.track(message='  >> Processed {0:,} lines', writeInterval=100)
         while True:
             packet = annot_q.get()
             if packet == _SIGNALS.HALT: halting = True
