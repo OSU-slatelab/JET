@@ -502,7 +502,7 @@ void *TrackProgress(void *a) {
                         progress_ticks[i] = '>';
                     for (i = num_ticks; i < prog_bar_size; i++)
                         progress_ticks[i] = ' ';
-                    info("\r Progress: %.1f%% [%s]  Words/thread/s: %.2fk Elapsed: %llds\n",
+                    info("\r Progress: %.1f%% [%s]  Words/thread/s: %.2fk Elapsed: %llds",
                         progress*100, progress_ticks,
                         (iter_word_count / (real)num_threads / (now - iter_start) / 1000),
                         now - iter_start
@@ -659,9 +659,11 @@ void LoadCorpusKnowledge() {
     info("  Filtered entity vocabulary size: %ld\n", ev->vocab_size);
 
     // read the term-string map
-    info("Reading term->string map...\n");
-    strmap = CreateTermStringMap(tv->vocab_size);
-    ReadTermStringMap(term_strmap_file, tv, strmap);
+    if (term_strmap_file[0] != 0) {
+        info("Reading term->string map...\n");
+        strmap = CreateTermStringMap(tv->vocab_size);
+        ReadTermStringMap(term_strmap_file, tv, strmap);
+    }
 }
 
 void header() {
@@ -693,11 +695,13 @@ void usage() {
     printf("\t-model <dir>\n");
     printf("\t\tStore trained word, term, entity, and context vectors in directory <dir>. Will be created with permissions 0700 if does not exist\n");
     printf("\t-size <int>\n");
-    printf("\t\tSet size of word vectors; default is 100\n");
+    printf("\t\tSet size of word vectors; default is %lld\n", embedding_size);
+    printf("\t-window <int>\n");
+    printf("\t\tSize of context window (on either side); default is %d\n", window);
     printf("\t-negative <int>\n");
-    printf("\t\tNumber of negative examples; default is 15, common values are 5 - 10 (0 = not used)\n");
+    printf("\t\tNumber of negative examples; default is %d, common values are 5 - 10 (0 = not used)\n", negative);
     printf("\t-threads <int>\n");
-    printf("\t\tUse <int> threads (default 1)\n");
+    printf("\t\tUse <int> threads (default %d)\n", num_threads);
     printf("\t-thread-config <file>\n");
     printf("\t\tWrite threading configuration to <file>; if <file> exists, read existing configuration from it\n");
     printf("\t-min-count <int>\n");
@@ -708,9 +712,9 @@ void usage() {
     printf(" (smaller value means more aggressive downsampling).");
     printf(" A higher value for -sample corresponds to a higher threshold for downsampling.\n");
     printf("\t-alpha <float>\n");
-    printf("\t\tSet the starting learning rate; default is 0.025\n");
+    printf("\t\tSet the starting learning rate; default is %f\n", alpha);
     printf("\t-alpha-schedule <int>\n");
-    printf("\t\tSet the scheduling interval for decreasing the learning rate; 0 for no scheduling, default is 10,000 words\n");
+    printf("\t\tSet the scheduling interval for decreasing the learning rate; 0 for no scheduling, default is %lld words\n", alpha_schedule_interval);
     printf("\t-iters <int>\n");
     printf("\t\tPerform i iterations over the data; default is %d\n", numiters);
     printf("\t-binary <int>\n");
@@ -738,9 +742,8 @@ void usage() {
     printf("\t\tDisables term training\n");
     printf("\t-disable-entities\n");
     printf("\t\tDisables entity training\n");
-    // TODO: fix example
-    printf("\nExamples:\n");
-    printf("./word2vecf -train data.txt -wvocab wv -cvocab ev -tvocab tv -output vec.txt -size 200 -negative 5 -threads 10 \n\n");
+    printf("\nExample:\n");
+    printf("./JET -plaintext data.txt -annotations data.annot -word-vocab wv -term-vocab tv -term-map term_entities.map -model myembeddings -size 100 -negative 5 -threads 8 \n\n");
 }
 
 void parse_args(int argc, char **argv) {
