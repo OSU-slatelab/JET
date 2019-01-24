@@ -12,7 +12,7 @@ fi
 
 # get the demo corpus
 curl -ko data/demo/demo_corpus.zip https://slate.cse.ohio-state.edu/JET/data/demo_corpus.zip
-cd demo_data && unzip demo_corpus.zip && cd ../
+cd data/demo && unzip demo_corpus.zip && cd ../../
 
 # build the term map for preprocessing
 python3 -m preprocessing.readstrings \
