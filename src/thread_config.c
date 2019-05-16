@@ -114,6 +114,7 @@ void ConfigureThreads(char *plaintextf, char *annotationsf, long long *thread_to
             &word_buffer_start_ix, &tokens_since_last_annotation, completed_term_buffer,
             &num_completed_terms, MAX_STRING, plainhook, annothook);
     }
+    info("%c  >> Processed (100%): %lld tokens\n", 13, current_corpus_ix);
     info("\n");
 
     // save the number of tokens in the last thread (will be over
