@@ -6,7 +6,7 @@ aka All the stuff I'm tired of copy-pasting :P
 import random
 import codecs
 import re
-from drgriffis.common.replacer import replacer
+from dependencies.drgriffis.common.replacer import replacer
 
 def laxIncrement(dct, key, by=1):
     if not dct.get(key):
