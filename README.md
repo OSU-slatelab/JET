@@ -7,6 +7,8 @@ terms from unlabeled text with distant supervision, described in the following p
 
 This work was also presented as a poster at the AMIA Informatics Summit 2018, titled "Jointly embedding biomedical entities and text with distant supervision."
 
+Looking for WikiSRS data?  You can find it at [https://slate.cse.ohio-state.edu/WikiSRS/](https://slate.cse.ohio-state.edu/WikiSRS/)
+
 ## Overview
 
 This repository contains three main components:
