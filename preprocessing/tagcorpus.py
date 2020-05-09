@@ -9,10 +9,10 @@ import operator
 import codecs
 import time
 import multiprocessing as mp
-import dependencies.drgriffis.common.preprocessing as pre
+from hedgepig_logger import log
 from dependencies.drgriffis.common import pickleio
-from dependencies.drgriffis.common import log
 from dependencies.drgriffis.common import util
+from . import tokenization
 
 class _SIGNALS:
     HALT = -1
@@ -55,10 +55,6 @@ class PartialTermMatch:
             self.num_tokens,
             term_id
         )
-
-def tokenize(line):
-    #return line.strip().lower().split()
-    return pre.tokenize(line)
 
 def tagLine(tokens, strmap, cur_word_ix):
     '''
@@ -120,7 +116,7 @@ def tagLine(tokens, strmap, cur_word_ix):
     matched_terms.sort(key=operator.itemgetter(0,1))
     return matched_terms
 
-def _enqueueLines(corpus, line_q, nthread, max_lines_in_queue):
+def _enqueueLines(corpus, tokenizer, line_q, nthread, max_lines_in_queue):
     with codecs.open(corpus, 'r', 'utf-8') as stream:
         line_ix, cur_word_ix = 0, 0
         for line in stream:
@@ -131,7 +127,7 @@ def _enqueueLines(corpus, line_q, nthread, max_lines_in_queue):
                 while line_q.qsize() > max_lines_in_queue:
                     time.sleep(0.5)
 
-            tokens = tokenize(line)
+            tokens = tokenizer.tokenize(line)
             line_q.put( (line_ix, tokens, cur_word_ix) )
 
             line_ix += 1
@@ -190,13 +186,13 @@ def _writeAnnotations(outfile, annot_q):
 
     log.flushTracker()
 
-def tagCorpus(corpusf, strmap, outfile, nthread, max_lines_in_queue=0):
+def tagCorpus(corpusf, strmap, outfile, tokenizer, nthread, max_lines_in_queue=0):
     '''
     '''
 
     line_q, annot_q, sig_q = mp.Queue(), mp.Queue(), mp.Queue()
 
-    enqueuer = mp.Process(target=_enqueueLines, args=(corpusf, line_q, nthread-2, max_lines_in_queue))
+    enqueuer = mp.Process(target=_enqueueLines, args=(corpusf, tokenizer, line_q, nthread-2, max_lines_in_queue))
     taggers = [mp.Process(target=_tagLines, args=(line_q, annot_q, strmap)) for _ in range(nthread-2)]
     writer = mp.Process(target=_writeAnnotations, args=(outfile, annot_q))
 
@@ -216,41 +212,67 @@ if __name__ == '__main__':
     def _cli():
         import optparse
         parser = optparse.OptionParser(usage='Usage: %prog CORPUS STRINGMAP OUTFILE')
-        parser.add_option('-t', '--threads', dest='threads',
-                help='number of threads to use for tagging the corpus (minimum 3, default %default)',
-                type='int', default=3)
+        parser.add_option('-i', '--input', dest='input_f',
+            help='(required) input plaintext corpus file')
+        parser.add_option('-o', '--output', dest='output_f',
+            help='(required) output annotations file')
+        parser.add_option('-t', '--terminology-pickle', dest='terminology_pkl_f',
+            help='(required) pre-compiled terminology pickle file (ngram->term)')
+        parser.add_option('--threads', dest='threads',
+            help='number of threads to use for tagging the corpus (minimum 3, default %default)',
+            type='int', default=3)
         parser.add_option('--max-lines', dest='maxlines',
-                help='maximum number of lines from the corpus to hold in memory at once (default no maximum)',
-                type='int', default=0)
+            help='maximum number of lines from the corpus to hold in memory at once (default no maximum)',
+            type='int', default=0)
         parser.add_option('-l', '--logfile', dest='logfile',
-                help=str.format('name of file to write log contents to (empty for stdout)'),
-                default=None)
+            help=str.format('name of file to write log contents to (empty for stdout)'),
+            default=None)
+        tokenization.CLI.addOptions(parser)
         (options, args) = parser.parse_args()
-        if len(args) != 3 or options.threads < 3:
+        if not options.input_f:
             parser.print_help()
-            exit()
-        corpus = args[0]
-        stringmap = args[1]
-        outfile = args[2]
-        return corpus, stringmap, outfile, options.threads, options.maxlines, options.logfile
+            parser.error('Must provide --input')
+        if not options.terminology_pkl_f:
+            parser.print_help()
+            parser.error('Must provide --terminology-pickle')
+        if not options.output_f:
+            parser.print_help()
+            parser.error('Must provide --output')
+        if options.threads < 3:
+            parser.print_help()
+            parser.error('--threads must be at least 3')
+        return options
 
-    def _logstart(args):
-        (corpus, stringmap, outfile, nthread, maxlines) = args
-        log.writeln('Tagging strings in corpus.')
-        log.writeln('  Corpus in: %s' % corpus)
-        log.writeln('  String map in: %s' % stringmap)
-        log.writeln('  Writing tagged corpus to: %s' % outfile)
-        log.writeln('  Tagging with # of threads: %d' % nthread)
-        log.writeln('  Capping line queue size at: %s' % ("unlimited" if maxlines <= 0 else str(maxlines)))
-        log.writeln()
-
-    (corpus, stringmap, outfile, nthread, maxlines, logfile) = args = _cli()
-    log.start(logfile=logfile, message=_logstart, args=args[:-1], stdout_also=True)
+    options = _cli()
+    log.start(options.logfile)
+    log.writeConfig([
+        ('Plaintext corpus file', options.input_f),
+        ('Pickled ngram->term map', options.terminology_pkl_f),
+        ('Output annotations file', options.output_f),
+        ('Tagging settings', [
+            ('Number of tagging threads', options.threads),
+            ('Line queue size cap', 'unlimited' if options.maxlines <= 0 else options.maxlines),
+        ]),
+        ('Tokenization settings', tokenization.CLI.logOptions(options)),
+    ], 'JET -- Automated corpus tagging')
 
     t_sub = log.startTimer('Loading pickled strings map...')
-    ngrams = pickleio.read(stringmap)
-    log.stopTimer(t_sub, message='Done in {0:.2f}s')
+    compiled_terminology = pickleio.read(options.terminology_pkl_f)
+    log.stopTimer(t_sub, message='Done in {0:.2f}s.\n')
+
+    t_sub = log.startTimer('Initializing tokenizer...')
+    tokenizer = tokenization.CLI.initializeTokenizer(options)
+    log.stopTimer(t_sub, message='Tokenizer ready in {0:.2f}s.\n')
     
     t_sub = log.startTimer('Tagging corpus...')
-    tagCorpus(corpus, ngrams, outfile, nthread, max_lines_in_queue=maxlines)
+    tagCorpus(
+        options.input_f,
+        compiled_terminology,
+        options.output_f,
+        tokenizer,
+        options.threads,
+        max_lines_in_queue=options.maxlines,
+    )
     log.stopTimer(t_sub, message='Done in {0:.2f}s')
+
+    log.stop()
