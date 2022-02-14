@@ -1,0 +1,6 @@
+numpy
+nltk
+hedgepig-logger
+pyemblib
+spacy
+tensorflow

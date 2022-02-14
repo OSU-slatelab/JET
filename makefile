@@ -2,15 +2,15 @@ GCC=gcc
 CFLAGS=-I. -lm -Ofast -pthread -march=native -Wall -funroll-loops -Wno-unused-result
 SHELL=/bin/bash
 
-bin/JET: src/JET.c src/thread_config.c src/vocab_learner.c src/vocab.c src/io.c src/parallel_reader.c src/logging.c src/cli.c src/entities.c src/model_io.c src/model.c src/context_manager.c src/term_strings.c src/mem.c
+JET/implementation/bin/JET: JET/implementation/JET.c JET/implementation/thread_config.c JET/implementation/vocab_learner.c JET/implementation/vocab.c JET/implementation/io.c JET/implementation/parallel_reader.c JET/implementation/logging.c JET/implementation/cli.c JET/implementation/entities.c JET/implementation/model_io.c JET/implementation/model.c JET/implementation/context_manager.c JET/implementation/term_strings.c JET/implementation/mem.c
 	@set -e; \
-	if [ ! -d bin ]; then mkdir bin; fi; \
+	if [ ! -d JET/implementation/bin ]; then mkdir JET/implementation/bin; fi; \
 	${GCC} -g \
-		src/vocab.c src/entities.c src/io.c src/logging.c src/mem.c src/cli.c src/parallel_reader.c src/term_strings.c src/mt19937ar.c \
-		src/thread_config.c src/vocab_learner.c src/model_io.c src/model.c src/context_manager.c \
-		src/JET.c \
+		JET/implementation/vocab.c JET/implementation/entities.c JET/implementation/io.c JET/implementation/logging.c JET/implementation/mem.c JET/implementation/cli.c JET/implementation/parallel_reader.c JET/implementation/term_strings.c JET/implementation/mt19937ar.c \
+		JET/implementation/thread_config.c JET/implementation/vocab_learner.c JET/implementation/model_io.c JET/implementation/model.c JET/implementation/context_manager.c \
+		JET/implementation/JET.c \
 		-I src \
-		-o bin/JET \
+		-o JET/implementation/bin/JET \
 		${CFLAGS}
 
 demo_annotation:
