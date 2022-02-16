@@ -2,12 +2,27 @@ import spacy
 from ..dependencies.drgriffis.common.preprocessing import tokenize as drgriffis_tokenize
 import optparse
 
+PreTokenized = 'PreTokenized'
+drgriffis = 'drgriffis'
+Spacy = 'Spacy'
+
 class Tokenizer:
-    def __init__(self, options):
+    def __init__(self, *args, **kwargs):
         pass
 
     def tokenize(self, string):
         return NotImplemented
+
+    @staticmethod
+    def build(tokenizer, *args, **kwargs):
+        if tokenizer == PreTokenized:
+            return PreTokenizedTokenizer(*args, **kwargs)
+        elif tokenizer == drgriffisTokenizer:
+            return drgriffisTokenizer(*args, **kwargs)
+        elif tokenizer == Spacy:
+            return SpacyTokenizer(*args, **kwargs)
+        else:
+            raise KeyError('Tokenizer type "%s" not known' % tokenizer)
 
 class PreTokenizedTokenizer(Tokenizer):
     def tokenize(self, string):
@@ -19,8 +34,8 @@ class drgriffisTokenizer(Tokenizer):
         return drgriffis_tokenize(string)
 
 class SpacyTokenizer(Tokenizer):
-    def __init__(self, options):
-        self.nlp = spacy.load(options.tokenizer_spacy_model)
+    def __init__(self, spacy_model='en_core_web_sm'):
+        self.nlp = spacy.load(spacy_model)
 
     def tokenize(self, string):
         spacy_output = self.nlp(string)
@@ -30,10 +45,6 @@ class SpacyTokenizer(Tokenizer):
         ]
 
 class CLI:
-    PreTokenized = 'PreTokenized'
-    drgriffis = 'drgriffis'
-    Spacy = 'Spacy'
-
     @staticmethod
     def listTokenizerOptions():
         return [
@@ -48,14 +59,10 @@ class CLI:
 
     @staticmethod
     def initializeTokenizer(options):
-        if options.tokenizer_type == CLI.PreTokenized:
-            return PreTokenizedTokenizer(options)
-        elif options.tokenizer_type == CLI.drgriffisTokenizer:
-            return drgriffisTokenizer(options)
-        elif options.tokenizer_type == CLI.Spacy:
-            return SpacyTokenizer(options)
-        else:
-            raise KeyError('Tokenizer type "%s" not known' % options.tokenizer_type)
+        return Tokenizer.build(
+            tokenizer=options.tokenizer_type,
+            spacy_model=options.tokenizer_spacy_model
+        )
 
     @staticmethod
     def addOptions(parser):
