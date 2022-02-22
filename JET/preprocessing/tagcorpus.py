@@ -4,6 +4,7 @@ Rewrite of corpus tagging
 (2) Allow overlapped phrases
 '''
 
+import os
 import random
 import operator
 import codecs
@@ -186,15 +187,16 @@ def _writeAnnotations(outfile, annot_q):
 
     log.flushTracker()
 
-def tagCorpus(corpusf, strmap, outfile, tokenizer, nthread, max_lines_in_queue=0):
+def runThreadedCorpusTagging(input_corpus_f, compiled_terminology,
+        output_annotations_f, tokenizer, nthread, max_lines_in_queue=0):
     '''
     '''
 
     line_q, annot_q, sig_q = mp.Queue(), mp.Queue(), mp.Queue()
 
-    enqueuer = mp.Process(target=_enqueueLines, args=(corpusf, tokenizer, line_q, nthread-2, max_lines_in_queue))
-    taggers = [mp.Process(target=_tagLines, args=(line_q, annot_q, strmap)) for _ in range(nthread-2)]
-    writer = mp.Process(target=_writeAnnotations, args=(outfile, annot_q))
+    enqueuer = mp.Process(target=_enqueueLines, args=(input_corpus_f, tokenizer, line_q, nthread-2, max_lines_in_queue))
+    taggers = [mp.Process(target=_tagLines, args=(line_q, annot_q, compiled_terminology)) for _ in range(nthread-2)]
+    writer = mp.Process(target=_writeAnnotations, args=(output_annotations_f, annot_q))
 
     # kick off all the threads
     enqueuer.start()
@@ -206,6 +208,69 @@ def tagCorpus(corpusf, strmap, outfile, tokenizer, nthread, max_lines_in_queue=0
     enqueuer.join()
     writer.join()
 
+
+def tagCorpus(
+    input_corpus_filepath,
+    pickled_terminology_filepath,
+    output_annotations_filepath,
+    tokenizer=tokenization.Spacy,
+    spacy_model='en_core_web_sm',
+    num_threads=1,
+    max_lines_in_queue=100
+):
+    '''
+    Positional arguments:
+    input_corpus_filepath -- path to the plaintext file to use as the input
+        corpus
+    pickled_terminology_filepath -- path to the gzipped pickle file containing
+        the compiled NGramMapper (produced by preprocessing.compile_terminology)
+    output_annotations_filepath -- path to the file to write standoff corpus
+        annotations to
+
+    Keyword arguments:
+    tokenizer -- string indicating the tokenizer to use for processing
+        multi-token terms (refers to ./tokenization.py)
+    spacy_model -- string indicating the spaCy model to be loaded if spaCy
+        tokenization is used (this argument is ignored if another tokenizer
+        is used)
+    num_threads -- integer number of threads to use for executing line-level
+        tagging with terminology entries
+    max_lines_in_queue -- integer number indicating the maximum number of
+        lines to have enqueued for tagging at any time (for memory usage
+        control only)
+
+    Return values:
+    N/A
+    '''
+    # error checking to avoid throwing FileNotFoundErrors in a spawned thread
+    if not os.path.exists(pickled_terminology_filepath):
+        raise FileNotFoundError("Terminology filepath not found: '{0}'".format(pickled_terminology_filepath))
+    if not os.path.exists(input_corpus_filepath):
+        raise FileNotFoundError("Input corpus filepath not found: '{0}'".format(input_corpus_filepath))
+    if not os.path.exists(os.path.dirname(output_annotations_filepath)):
+        raise FileNotFoundError("Directory for output annotations file not found: '{0}'".format(output_annotations_filepath))
+
+    t_sub = log.startTimer('Loading pickled strings map...')
+    compiled_terminology = pickleio.read(pickled_terminology_filepath)
+    log.stopTimer(t_sub, message='Done in {0:.2f}s.\n')
+
+    t_sub = log.startTimer('Initializing tokenizer...')
+    tokenizer = tokenization.Tokenizer.build(
+        tokenizer,
+        spacy_model=spacy_model
+    )
+    log.stopTimer(t_sub, message='Tokenizer ready in {0:.2f}s.\n')
+    
+    t_sub = log.startTimer('Tagging corpus...')
+    runThreadedCorpusTagging(
+        input_corpus_filepath,
+        compiled_terminology,
+        output_annotations_filepath,
+        tokenizer,
+        num_threads,
+        max_lines_in_queue=max_lines_in_queue,
+    )
+    log.stopTimer(t_sub, message='Done in {0:.2f}s')
 
 
 if __name__ == '__main__':
@@ -256,23 +321,14 @@ if __name__ == '__main__':
         ('Tokenization settings', tokenization.CLI.logOptions(options)),
     ], 'JET -- Automated corpus tagging')
 
-    t_sub = log.startTimer('Loading pickled strings map...')
-    compiled_terminology = pickleio.read(options.terminology_pkl_f)
-    log.stopTimer(t_sub, message='Done in {0:.2f}s.\n')
-
-    t_sub = log.startTimer('Initializing tokenizer...')
-    tokenizer = tokenization.CLI.initializeTokenizer(options)
-    log.stopTimer(t_sub, message='Tokenizer ready in {0:.2f}s.\n')
-    
-    t_sub = log.startTimer('Tagging corpus...')
     tagCorpus(
         options.input_f,
-        compiled_terminology,
+        options.terminology_pkl_f,
         options.output_f,
-        tokenizer,
-        options.threads,
-        max_lines_in_queue=options.maxlines,
+        tokenizer=options.tokenizer_type,
+        spacy_model=options.tokenizer_spacy_model,
+        num_threads=options.threads,
+        max_lines_in_queue=options.maxlines
     )
-    log.stopTimer(t_sub, message='Done in {0:.2f}s')
 
     log.stop()
